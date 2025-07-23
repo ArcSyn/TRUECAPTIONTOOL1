@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+
+sample.mp4
+out*.mp3
+*.wav
+
+server/uploads/*
+!server/uploads/.gitkeep
+CapEdify/server/uploads/*
+!CapEdify/server/uploads/.gitkeep
+
+.DS_Store
+Thumbs.db
+.vscode/
