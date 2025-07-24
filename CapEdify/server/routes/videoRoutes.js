@@ -2,15 +2,21 @@ const express = require('express');
 const router = express.Router();
 const videoService = require('../services/videoService');
 const upload = require('./middleware/upload');
+const checkApiKey = require('./middleware/checkApiKey'); // 🔐 Middleware
+const { createClient } = require('@supabase/supabase-js');
+
+require('dotenv').config();
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE
+);
 
 // POST /api/video/upload - Upload video file
-router.post('/upload', upload.single('video'), async (req, res) => {
+router.post('/upload', checkApiKey, upload.single('video'), async (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'No video file provided' 
-      });
+      return res.status(400).json({ success: false, error: 'No video file provided' });
     }
 
     console.log('Video upload request received:', req.file.originalname);
@@ -21,11 +27,19 @@ router.post('/upload', upload.single('video'), async (req, res) => {
       mimetype: req.file.mimetype,
       size: req.file.size,
       path: req.file.path,
-      duration: 0, // Will be updated later when processing
+      duration: 0,
       status: 'uploaded'
     };
 
     const video = await videoService.createVideo(videoData);
+
+    // ✅ Log usage for rate limiting
+    await supabase.from('usage_logs').insert([
+      {
+        api_key: req.user.api_key,
+        endpoint: '/upload'
+      }
+    ]);
 
     res.json({
       success: true,
@@ -37,19 +51,16 @@ router.post('/upload', upload.single('video'), async (req, res) => {
 
   } catch (error) {
     console.error('Video upload error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // GET /api/videos - Get all videos
-router.get('/', async (req, res) => {
+router.get('/', checkApiKey, async (req, res) => {
   try {
     console.log('Get all videos request received');
     const videos = await videoService.getAllVideos();
-    
+
     res.json({
       success: true,
       videos: videos.map(video => ({
@@ -65,21 +76,18 @@ router.get('/', async (req, res) => {
 
   } catch (error) {
     console.error('Get videos error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
 // GET /api/video/:id - Get single video
-router.get('/:id', async (req, res) => {
+router.get('/:id', checkApiKey, async (req, res) => {
   try {
     const { id } = req.params;
     console.log('Get video by ID request received:', id);
-    
+
     const video = await videoService.getVideoById(id);
-    
+
     res.json({
       success: true,
       video: {
@@ -96,50 +104,40 @@ router.get('/:id', async (req, res) => {
   } catch (error) {
     console.error('Get video error:', error);
     const statusCode = error.message.includes('not found') ? 404 : 500;
-    res.status(statusCode).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(statusCode).json({ success: false, error: error.message });
   }
 });
 
 // DELETE /api/video/:id - Delete video
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', checkApiKey, async (req, res) => {
   try {
     const { id } = req.params;
     console.log('Delete video request received:', id);
-    
+
     const result = await videoService.deleteVideo(id);
-    
     res.json(result);
 
   } catch (error) {
     console.error('Delete video error:', error);
     const statusCode = error.message.includes('not found') ? 404 : 500;
-    res.status(statusCode).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(statusCode).json({ success: false, error: error.message });
   }
 });
 
 // PUT /api/video/:id/status - Update video status
-router.put('/:id/status', async (req, res) => {
+router.put('/:id/status', checkApiKey, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    
+
     if (!status) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Status is required' 
-      });
+      return res.status(400).json({ success: false, error: 'Status is required' });
     }
 
     console.log('Update video status request received:', id, status);
-    
+
     const video = await videoService.updateVideoStatus(id, status);
-    
+
     res.json({
       success: true,
       video: {
@@ -153,10 +151,7 @@ router.put('/:id/status', async (req, res) => {
   } catch (error) {
     console.error('Update video status error:', error);
     const statusCode = error.message.includes('not found') ? 404 : 500;
-    res.status(statusCode).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(statusCode).json({ success: false, error: error.message });
   }
 });
 

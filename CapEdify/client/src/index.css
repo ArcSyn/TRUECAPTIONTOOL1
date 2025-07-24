@@ -29,15 +29,14 @@
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
-    
-    /* Theme variables */
+
     --theme-primary: hsl(210, 100%, 50%);
     --theme-secondary: hsl(210, 20%, 95%);
     --theme-accent: hsl(210, 100%, 60%);
     --theme-background: hsl(210, 20%, 98%);
     --theme-surface: hsl(210, 20%, 100%);
   }
-  
+
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
@@ -70,6 +69,7 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
@@ -79,27 +79,28 @@
 @layer utilities {
   .glass-morphism {
     background: rgba(255, 255, 255, 0.1);
+    -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.2);
   }
-  
+
   .theme-gradient {
     background: linear-gradient(135deg, var(--theme-primary), var(--theme-accent));
   }
-  
+
   .animate-float {
     animation: float 3s ease-in-out infinite;
   }
-  
+
   @keyframes float {
     0%, 100% { transform: translateY(0px); }
     50% { transform: translateY(-10px); }
   }
-  
+
   .animate-glow {
     animation: glow 2s ease-in-out infinite alternate;
   }
-  
+
   @keyframes glow {
     from { box-shadow: 0 0 5px var(--theme-primary); }
     to { box-shadow: 0 0 20px var(--theme-primary), 0 0 30px var(--theme-primary); }
