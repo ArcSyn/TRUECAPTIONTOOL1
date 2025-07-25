@@ -71,3 +71,6 @@ export const useTheme = () => {
 
   return context
 }
+
+import { cn } from "@/lib/utils";
+

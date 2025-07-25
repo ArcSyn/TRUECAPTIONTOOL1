@@ -1,20 +1,29 @@
+"use client"
 
-import { Bell } from "lucide-react"
-import { Button } from "./ui/button"
-import { ThemeToggle } from "./ui/theme-toggle"
-import { useAuth } from "@/contexts/AuthContext"
 import { useNavigate } from "react-router-dom"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
+import ThemeSelector from "@/components/ThemeSelector" // ✅ Correct import
 
 export function Header() {
   const navigate = useNavigate()
+
   return (
-    <header className="fixed top-0 z-50 w-full border-b bg-background/80 backdrop-blur-sm">
-      <div className="flex h-16 items-center justify-between px-6">
-        <div className="text-xl font-bold" onClick={navigate("/")}>Home</div>
-        <div className="flex items-center gap-4">
+    <header className={cn("top-0 z-50 fixed bg-background/80 backdrop-blur-sm border-b w-full")}>
+      <div className={cn("flex justify-between items-center px-6 h-16")}>
+        <div
+          className={cn("font-bold text-xl cursor-pointer")}
+          onClick={() => navigate("/")}
+        >
+          Home
+        </div>
+        <div className={cn("flex items-center gap-4")}>
           <ThemeToggle />
+          <ThemeSelector />
         </div>
       </div>
     </header>
   )
 }
+
+import { cn } from "@/lib/utils";
+

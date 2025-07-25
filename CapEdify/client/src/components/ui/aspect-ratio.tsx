@@ -5,3 +5,6 @@ const AspectRatio = AspectRatioPrimitive.Root
 
 export { AspectRatio }
 
+
+import { cn } from "@/lib/utils";
+

@@ -1,14 +1,15 @@
+import { cn } from "@/lib/utils";
 import { Outlet } from "react-router-dom"
 import { Header } from "./Header"
 import { Footer } from "./Footer"
 
 export function Layout() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-secondary">
+    <div className={cn("bg-gradient-to-br from-background to-secondary min-h-screen")}>
       <Header />
-      <div className="flex h-[calc(100vh-4rem)] pt-16">
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="mx-auto max-w-7xl">
+      <div className={cn("flex pt-16 h-[calc(100vh-4rem)]")}>
+        <main className={cn("flex-1 p-6 overflow-y-auto")}>
+          <div className={cn("mx-auto max-w-7xl")}>
             <Outlet />
           </div>
         </main>
@@ -17,3 +18,4 @@ export function Layout() {
     </div>
   )
 }
+

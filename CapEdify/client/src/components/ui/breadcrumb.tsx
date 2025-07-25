@@ -99,8 +99,8 @@ const BreadcrumbEllipsis = ({
     className={cn("flex h-9 w-9 items-center justify-center", className)}
     {...props}
   >
-    <MoreHorizontal className="h-4 w-4" />
-    <span className="sr-only">More</span>
+    <MoreHorizontal className={cn("h-4 w-4")} />
+    <span className={cn("sr-only")}>More</span>
   </span>
 )
 BreadcrumbEllipsis.displayName = "BreadcrumbElipssis"
@@ -114,4 +114,5 @@ export {
   BreadcrumbSeparator,
   BreadcrumbEllipsis,
 }
+
 

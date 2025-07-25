@@ -1,19 +1,16 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom"
-import { ThemeProvider } from "./components/ui/theme-provider"
-import { Toaster } from "./components/ui/toaster"
-import { Home } from "./pages/Home"
+import { Home } from './pages/Home';
+<div className="bg-red-500 p-4 text-white">Tailwind is working!</div>
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="light" storageKey="ui-theme">
-      <Router>
-        <Routes>
-          <Route path="/" element={<Home />} />
-        </Routes>
-      </Router>
-      <Toaster />
-    </ThemeProvider>
-  )
+    <>
+      <div className="bg-red-500 p-4 text-white">Tailwind is working!</div>
+      <Home />
+    </>
+  );
 }
 
-export default App
+export default App;
+
+import { cn } from "@/lib/utils";
+

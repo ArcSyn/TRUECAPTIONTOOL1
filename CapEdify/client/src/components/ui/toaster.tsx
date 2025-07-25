@@ -20,7 +20,7 @@ export function Toaster() {
         }
         return (
           <Toast key={id} {...props}>
-            <div className="grid gap-1 select-text">
+            <div className={cn("grid gap-1 select-text")}>
               {title && <ToastTitle>{title}</ToastTitle>}
               {description && (
                 <ToastDescription>{description}</ToastDescription>
@@ -35,4 +35,7 @@ export function Toaster() {
     </ToastProvider>
   )
 }
+
+
+import { cn } from "@/lib/utils";
 

@@ -70,17 +70,17 @@ export function TranscriptionProgress({ videoId, onTranscriptionComplete }: Tran
 
   if (progress.status === 'processing') {
     return (
-      <Card className="p-6 bg-white/10 backdrop-blur-sm border-white/20">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 mx-auto bg-blue-500/20 rounded-full flex items-center justify-center animate-pulse">
-            <Mic className="h-8 w-8 text-blue-600" />
+      <Card className={cn("p-6 bg-white/10 backdrop-blur-sm border-white/20")}>
+        <div className={cn("text-center space-y-4")}>
+          <div className={cn("w-16 h-16 mx-auto bg-blue-500/20 rounded-full flex items-center justify-center animate-pulse")}>
+            <Mic className={cn("h-8 w-8 text-blue-600")} />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Transcribing Audio...</h3>
-          <Progress value={progress.progress} className="w-full max-w-xs mx-auto" />
-          <div className="space-y-1">
-            <p className="text-sm text-gray-600">{Math.round(progress.progress)}% complete</p>
+          <h3 className={cn("text-lg font-semibold text-gray-900")}>Transcribing Audio...</h3>
+          <Progress value={progress.progress} className={cn("w-full max-w-xs mx-auto")} />
+          <div className={cn("space-y-1")}>
+            <p className={cn("text-sm text-gray-600")}>{Math.round(progress.progress)}% complete</p>
             {progress.estimatedTime && (
-              <p className="text-xs text-gray-500">
+              <p className={cn("text-xs text-gray-500")}>
                 Estimated time remaining: {progress.estimatedTime}s
               </p>
             )}
@@ -91,50 +91,50 @@ export function TranscriptionProgress({ videoId, onTranscriptionComplete }: Tran
   }
 
   return (
-    <Card className="p-6 bg-white/10 backdrop-blur-sm border-white/20">
-      <div className="text-center space-y-6">
-        <div className="w-16 h-16 mx-auto bg-green-500/20 rounded-full flex items-center justify-center">
-          <Mic className="h-8 w-8 text-green-600" />
+    <Card className={cn("p-6 bg-white/10 backdrop-blur-sm border-white/20")}>
+      <div className={cn("text-center space-y-6")}>
+        <div className={cn("w-16 h-16 mx-auto bg-green-500/20 rounded-full flex items-center justify-center")}>
+          <Mic className={cn("h-8 w-8 text-green-600")} />
         </div>
         
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          <h3 className={cn("text-lg font-semibold text-gray-900 mb-2")}>
             Ready to Transcribe
           </h3>
-          <p className="text-gray-600 mb-6">
+          <p className={cn("text-gray-600 mb-6")}>
             Choose your preferred transcription method
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className={cn("grid grid-cols-1 md:grid-cols-2 gap-4")}>
           <Button
             onClick={() => startTranscriptionProcess('groq')}
-            className="flex flex-col items-center space-y-2 h-auto py-4 bg-blue-600 hover:bg-blue-700"
+            className={cn("flex flex-col items-center space-y-2 h-auto py-4 bg-blue-600 hover:bg-blue-700")}
             disabled={progress.status === 'processing'}
           >
-            <div className="flex items-center space-x-2">
-              <Zap className="h-5 w-5" />
-              <Wifi className="h-4 w-4" />
+            <div className={cn("flex items-center space-x-2")}>
+              <Zap className={cn("h-5 w-5")} />
+              <Wifi className={cn("h-4 w-4")} />
             </div>
-            <div className="text-center">
-              <div className="font-semibold">Groq AI</div>
-              <div className="text-xs opacity-90">Fast & Accurate</div>
+            <div className={cn("text-center")}>
+              <div className={cn("font-semibold")}>Groq AI</div>
+              <div className={cn("text-xs opacity-90")}>Fast & Accurate</div>
             </div>
           </Button>
 
           <Button
             onClick={() => startTranscriptionProcess('whisper')}
             variant="outline"
-            className="flex flex-col items-center space-y-2 h-auto py-4 bg-white/10 border-white/20 hover:bg-white/20"
+            className={cn("flex flex-col items-center space-y-2 h-auto py-4 bg-white/10 border-white/20 hover:bg-white/20")}
             disabled={progress.status === 'processing'}
           >
-            <div className="flex items-center space-x-2">
-              <Mic className="h-5 w-5" />
-              <WifiOff className="h-4 w-4" />
+            <div className={cn("flex items-center space-x-2")}>
+              <Mic className={cn("h-5 w-5")} />
+              <WifiOff className={cn("h-4 w-4")} />
             </div>
-            <div className="text-center">
-              <div className="font-semibold">Whisper Local</div>
-              <div className="text-xs opacity-70">Private & Offline</div>
+            <div className={cn("text-center")}>
+              <div className={cn("font-semibold")}>Whisper Local</div>
+              <div className={cn("text-xs opacity-70")}>Private & Offline</div>
             </div>
           </Button>
         </div>
@@ -142,3 +142,6 @@ export function TranscriptionProgress({ videoId, onTranscriptionComplete }: Tran
     </Card>
   );
 }
+
+import { cn } from "@/lib/utils";
+

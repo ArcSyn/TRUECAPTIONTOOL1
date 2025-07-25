@@ -4,10 +4,14 @@ import { Upload, File, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Card } from './ui/card';
-import { formatFileSize, formatDuration } from '@/utils/time';
-import { VideoFile } from '@/types';
+import { formatFileSize } from '@/utils/time';
+import { compressVideo } from '@/utils/compress';
 import { uploadVideo } from '@/api/video';
 import { useToast } from '@/hooks/useToast';
+import { VideoFile } from '@/types';
+import { cn } from '@/lib/utils';
+// Optional step navigation
+// import { useStep } from '@/hooks/useStep';
 
 interface VideoUploadProps {
   onVideoUploaded: (video: VideoFile) => void;
@@ -18,58 +22,53 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const { toast } = useToast();
+  // const { setStep } = useStep(); // Optional, uncomment if using a step system
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (!file) return;
 
-    console.log('File dropped:', file.name, file.size);
     setUploadedFile(file);
     setIsUploading(true);
     setUploadProgress(0);
 
     try {
-      // Simulate upload progress
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return prev;
-          }
-          return prev + Math.random() * 10;
-        });
-      }, 200);
+      let compressedFile: File = file;
 
-      const result = await uploadVideo(file);
+      try {
+        compressedFile = await compressVideo(file);
+      } catch (compressionError) {
+        console.warn('Compression failed, uploading original file.', compressionError);
+      }
 
-      clearInterval(progressInterval);
-      setUploadProgress(100);
+      const result = await uploadVideo(compressedFile, (progress: number) => {
+        setUploadProgress(progress);
+      });
 
-      // Create video object URL for preview
-      const videoUrl = URL.createObjectURL(file);
+      const videoUrl = URL.createObjectURL(compressedFile);
 
       const videoFile: VideoFile = {
-        file,
+        file: compressedFile,
         url: videoUrl,
         duration: result.duration,
         size: result.size,
-        name: file.name,
-        id: result.videoId // Add the video ID from the API response
+        name: compressedFile.name,
+        id: result.videoId,
       };
 
       onVideoUploaded(videoFile);
+      // setStep('transcribe'); // Optional transition
 
       toast({
-        title: "Upload successful",
-        description: `${file.name} has been uploaded successfully.`,
+        title: 'Upload successful',
+        description: `${compressedFile.name} uploaded.`,
       });
-
-    } catch (error) {
-      console.error('Upload failed:', error);
+    } catch (err: any) {
+      console.error('Upload failed:', err);
       toast({
-        title: "Upload failed",
-        description: error instanceof Error ? error.message : "Failed to upload video",
-        variant: "destructive",
+        title: 'Upload failed',
+        description: err?.message || 'Could not upload video.',
+        variant: 'destructive',
       });
     } finally {
       setIsUploading(false);
@@ -79,10 +78,10 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'video/*': ['.mp4', '.mov', '.webm', '.avi']
+      'video/*': ['.mp4', '.mov', '.webm', '.avi'],
     },
     maxFiles: 1,
-    maxSize: 100 * 1024 * 1024 * 1024 // 100GB
+    maxSize: 100 * 1024 * 1024 * 1024, // 100GB
   });
 
   const removeFile = () => {
@@ -92,15 +91,15 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
 
   if (uploadedFile && !isUploading) {
     return (
-      <Card className="p-6 bg-white/10 backdrop-blur-sm border-white/20">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-blue-500/20 rounded-lg flex items-center justify-center">
-              <File className="h-6 w-6 text-blue-600" />
+      <Card className={cn("bg-white/10 backdrop-blur-sm p-6 border-white/20")}>
+        <div className={cn("flex justify-between items-center")}>
+          <div className={cn("flex items-center space-x-4")}>
+            <div className={cn("flex justify-center items-center bg-blue-500/20 rounded-lg w-12 h-12")}>
+              <File className={cn("w-6 h-6 text-blue-600")} />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">{uploadedFile.name}</h3>
-              <p className="text-sm text-gray-600">
+              <h3 className={cn("font-semibold text-gray-900")}>{uploadedFile.name}</h3>
+              <p className={cn("text-gray-600 text-sm")}>
                 {formatFileSize(uploadedFile.size)} • Ready for transcription
               </p>
             </div>
@@ -109,9 +108,9 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
             variant="ghost"
             size="sm"
             onClick={removeFile}
-            className="text-gray-500 hover:text-red-500"
+            className={cn("text-gray-500 hover:text-red-500")}
           >
-            <X className="h-4 w-4" />
+            <X className={cn("w-4 h-4")} />
           </Button>
         </div>
       </Card>
@@ -119,39 +118,38 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
   }
 
   return (
-    <Card className="p-8 bg-white/10 backdrop-blur-sm border-white/20 border-dashed border-2">
+    <Card className={cn("bg-white/10 backdrop-blur-sm p-8 border-2 border-white/20 border-dashed")}>
       <div
         {...getRootProps()}
-        className={`cursor-pointer transition-all duration-300 ${
-          isDragActive ? 'scale-105 bg-blue-50/50' : ''
-        }`}
+        className={cn(
+          'transition-all duration-300 cursor-pointer',
+          isDragActive && 'scale-105 bg-blue-50/50'
+        )}
       >
         <input {...getInputProps()} />
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 mx-auto bg-blue-500/20 rounded-full flex items-center justify-center">
-            <Upload className="h-8 w-8 text-blue-600" />
+        <div className={cn("space-y-4 text-center")}>
+          <div className={cn("flex justify-center items-center bg-blue-500/20 mx-auto rounded-full w-16 h-16")}>
+            <Upload className={cn("w-8 h-8 text-blue-600")} />
           </div>
 
           {isUploading ? (
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Uploading...</h3>
-              <Progress value={uploadProgress} className="w-full max-w-xs mx-auto" />
-              <p className="text-sm text-gray-600">{Math.round(uploadProgress)}% complete</p>
+            <div className={cn("space-y-4")}>
+              <h3 className={cn("font-semibold text-gray-900 text-lg")}>Uploading...</h3>
+              <Progress value={uploadProgress} className={cn("mx-auto w-full max-w-xs")} />
+              <p className={cn("text-gray-600 text-sm")}>{Math.round(uploadProgress)}% complete</p>
             </div>
           ) : (
             <>
-              <h3 className="text-lg font-semibold text-gray-900">
+              <h3 className={cn("font-semibold text-gray-900 text-lg")}>
                 {isDragActive ? 'Drop your video here' : 'Upload your video'}
               </h3>
-              <p className="text-gray-600">
+              <p className={cn("text-gray-600")}>
                 Drag and drop your video file here, or click to browse
               </p>
-              <p className="text-sm text-gray-500">
+              <p className={cn("text-gray-500 text-sm")}>
                 Supports MP4, MOV, WebM, AVI • Up to 100GB
               </p>
-              <Button className="mt-4">
-                Choose File
-              </Button>
+              <Button className={cn("mt-4")}>Choose File</Button>
             </>
           )}
         </div>

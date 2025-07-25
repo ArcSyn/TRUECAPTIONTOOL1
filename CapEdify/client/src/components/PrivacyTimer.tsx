@@ -67,21 +67,21 @@ export function PrivacyTimer({ onDataCleared }: PrivacyTimerProps) {
   }
 
   return (
-    <Card className="fixed bottom-4 right-4 p-4 bg-white/90 backdrop-blur-sm border-white/20 shadow-lg max-w-xs">
-      <div className="space-y-3">
-        <div className="flex items-center space-x-2">
-          <Shield className="h-4 w-4 text-green-600" />
-          <span className="text-sm font-medium text-gray-900">Privacy Timer</span>
+    <Card className={cn("fixed bottom-4 right-4 p-4 bg-white/90 backdrop-blur-sm border-white/20 shadow-lg max-w-xs")}>
+      <div className={cn("space-y-3")}>
+        <div className={cn("flex items-center space-x-2")}>
+          <Shield className={cn("h-4 w-4 text-green-600")} />
+          <span className={cn("text-sm font-medium text-gray-900")}>Privacy Timer</span>
         </div>
         
-        <div className="flex items-center space-x-2">
-          <Clock className="h-4 w-4 text-gray-600" />
-          <span className="text-sm text-gray-700">
+        <div className={cn("flex items-center space-x-2")}>
+          <Clock className={cn("h-4 w-4 text-gray-600")} />
+          <span className={cn("text-sm text-gray-700")}>
             Auto-clear in {formatTime(timeRemaining)}
           </span>
         </div>
 
-        <p className="text-xs text-gray-600">
+        <p className={cn("text-xs text-gray-600")}>
           All data will be automatically cleared for your privacy.
         </p>
 
@@ -89,12 +89,15 @@ export function PrivacyTimer({ onDataCleared }: PrivacyTimerProps) {
           onClick={handleManualClear}
           size="sm"
           variant="outline"
-          className="w-full text-xs bg-white/50 border-gray-200 hover:bg-red-50 hover:border-red-200 hover:text-red-700"
+          className={cn("w-full text-xs bg-white/50 border-gray-200 hover:bg-red-50 hover:border-red-200 hover:text-red-700")}
         >
-          <Trash2 className="h-3 w-3 mr-1" />
+          <Trash2 className={cn("h-3 w-3 mr-1")} />
           Clear Now
         </Button>
       </div>
     </Card>
   );
 }
+
+import { cn } from "@/lib/utils";
+

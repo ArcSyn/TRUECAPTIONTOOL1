@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import React, { useState, useEffect } from 'react';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
@@ -118,86 +119,86 @@ export function CaptionEditor({ captions, onCaptionsChange, projectId }: Caption
   };
 
   return (
-    <Card className="p-6 bg-white/10 backdrop-blur-sm border-white/20">
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Caption Editor</h3>
-          <div className="flex items-center space-x-2">
+    <Card className={cn("bg-white/10 backdrop-blur-sm p-6 border-white/20")}>
+      <div className={cn("space-y-4")}>
+        <div className={cn("flex justify-between items-center")}>
+          <h3 className={cn("font-semibold text-gray-900 text-lg")}>Caption Editor</h3>
+          <div className={cn("flex items-center space-x-2")}>
             <Button
               variant="outline"
               size="sm"
               onClick={undo}
               disabled={historyIndex <= 0}
-              className="bg-white/10 border-white/20"
+              className={cn("bg-white/10 border-white/20")}
             >
-              <Undo className="h-4 w-4" />
+              <Undo className={cn("w-4 h-4")} />
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={redo}
               disabled={historyIndex >= history.length - 1}
-              className="bg-white/10 border-white/20"
+              className={cn("bg-white/10 border-white/20")}
             >
-              <Redo className="h-4 w-4" />
+              <Redo className={cn("w-4 h-4")} />
             </Button>
-            <Button onClick={handleAddCaption} size="sm" className="bg-blue-600 hover:bg-blue-700">
-              <Plus className="h-4 w-4 mr-2" />
+            <Button onClick={handleAddCaption} size="sm" className={cn("bg-blue-600 hover:bg-blue-700")}>
+              <Plus className={cn("mr-2 w-4 h-4")} />
               Add Caption
             </Button>
           </div>
         </div>
 
-        <ScrollArea className="h-96">
-          <div className="space-y-3">
+        <ScrollArea className={cn("h-96")}>
+          <div className={cn("space-y-3")}>
             {captions.map((caption, index) => (
-              <Card key={caption.id} className="p-4 bg-white/5 border-white/10">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">
+              <Card key={caption.id} className={cn("bg-white/5 p-4 border-white/10")}>
+                <div className={cn("space-y-3")}>
+                  <div className={cn("flex justify-between items-center")}>
+                    <span className={cn("font-medium text-gray-700 text-sm")}>
                       Caption {index + 1}
                     </span>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => handleDeleteCaption(caption.id)}
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                      className={cn("hover:bg-red-50 text-red-500 hover:text-red-700")}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className={cn("w-4 h-4")} />
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className={cn("gap-2 grid grid-cols-2")}>
                     <div>
-                      <label className="text-xs text-gray-600 mb-1 block">Start Time</label>
+                      <label className={cn("block mb-1 text-gray-600 text-xs")}>Start Time</label>
                       <Input
                         value={formatTime(caption.startTime)}
                         onChange={(e) => {
                           const newStartTime = parseTime(e.target.value);
                           handleUpdateCaption(caption.id, { startTime: newStartTime });
                         }}
-                        className="bg-white/10 border-white/20"
+                        className={cn("bg-white/10 border-white/20")}
                         placeholder="00:00.0"
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-gray-600 mb-1 block">End Time</label>
+                      <label className={cn("block mb-1 text-gray-600 text-xs")}>End Time</label>
                       <Input
                         value={formatTime(caption.endTime)}
                         onChange={(e) => {
                           const newEndTime = parseTime(e.target.value);
                           handleUpdateCaption(caption.id, { endTime: newEndTime });
                         }}
-                        className="bg-white/10 border-white/20"
+                        className={cn("bg-white/10 border-white/20")}
                         placeholder="00:00.0"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="text-xs text-gray-600 mb-1 block">Caption Text</label>
+                    <label className={cn("block mb-1 text-gray-600 text-xs")}>Caption Text</label>
                     {editingId === caption.id ? (
-                      <div className="space-y-2">
+                      <div className={cn("space-y-2")}>
                         <Textarea
                           value={caption.text}
                           onChange={(e) => {
@@ -206,23 +207,23 @@ export function CaptionEditor({ captions, onCaptionsChange, projectId }: Caption
                             );
                             onCaptionsChange(updatedCaptions);
                           }}
-                          className="bg-white/10 border-white/20"
+                          className={cn("bg-white/10 border-white/20")}
                           rows={2}
                         />
-                        <div className="flex space-x-2">
+                        <div className={cn("flex space-x-2")}>
                           <Button
                             size="sm"
                             onClick={() => handleUpdateCaption(caption.id, { text: caption.text })}
-                            className="bg-green-600 hover:bg-green-700"
+                            className={cn("bg-green-600 hover:bg-green-700")}
                           >
-                            <Save className="h-3 w-3 mr-1" />
+                            <Save className={cn("mr-1 w-3 h-3")} />
                             Save
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setEditingId(null)}
-                            className="bg-white/10 border-white/20"
+                            className={cn("bg-white/10 border-white/20")}
                           >
                             Cancel
                           </Button>
@@ -231,9 +232,9 @@ export function CaptionEditor({ captions, onCaptionsChange, projectId }: Caption
                     ) : (
                       <div
                         onClick={() => setEditingId(caption.id)}
-                        className="p-2 bg-white/5 border border-white/10 rounded cursor-pointer hover:bg-white/10 transition-colors"
+                        className={cn("bg-white/5 hover:bg-white/10 p-2 border border-white/10 rounded transition-colors cursor-pointer")}
                       >
-                        <p className="text-sm text-gray-800">{caption.text}</p>
+                        <p className={cn("text-gray-800 text-sm")}>{caption.text}</p>
                       </div>
                     )}
                   </div>
@@ -243,10 +244,10 @@ export function CaptionEditor({ captions, onCaptionsChange, projectId }: Caption
           </div>
         </ScrollArea>
 
-        <div className="flex items-center justify-between text-xs text-gray-500">
+        <div className={cn("flex justify-between items-center text-gray-500 text-xs")}>
           <span>{captions.length} captions</span>
-          <span className="flex items-center space-x-1">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+          <span className={cn("flex items-center space-x-1")}>
+            <div className={cn("bg-green-500 rounded-full w-2 h-2 animate-pulse")} />
             <span>Auto-saved</span>
           </span>
         </div>
@@ -254,3 +255,4 @@ export function CaptionEditor({ captions, onCaptionsChange, projectId }: Caption
     </Card>
   );
 }
+

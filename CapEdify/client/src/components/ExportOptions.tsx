@@ -88,57 +88,57 @@ export function ExportOptions({ captions, projectName }: ExportOptionsProps) {
   };
 
   return (
-    <Card className="p-6 bg-white/10 backdrop-blur-sm border-white/20">
-      <div className="space-y-6">
+    <Card className={cn("p-6 bg-white/10 backdrop-blur-sm border-white/20")}>
+      <div className={cn("space-y-6")}>
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Export Options</h3>
-          <p className="text-gray-600">Choose your preferred export format</p>
+          <h3 className={cn("text-lg font-semibold text-gray-900 mb-2")}>Export Options</h3>
+          <p className={cn("text-gray-600")}>Choose your preferred export format</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Card className="p-4 bg-white/5 border-white/10">
-            <div className="space-y-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
-                  <Layers className="h-5 w-5 text-purple-600" />
+        <div className={cn("grid grid-cols-1 md:grid-cols-2 gap-4")}>
+          <Card className={cn("p-4 bg-white/5 border-white/10")}>
+            <div className={cn("space-y-4")}>
+              <div className={cn("flex items-center space-x-3")}>
+                <div className={cn("w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center")}>
+                  <Layers className={cn("h-5 w-5 text-purple-600")} />
                 </div>
                 <div>
-                  <h4 className="font-semibold text-gray-900">After Effects</h4>
-                  <p className="text-sm text-gray-600">JSX Script Export</p>
+                  <h4 className={cn("font-semibold text-gray-900")}>After Effects</h4>
+                  <p className={cn("text-sm text-gray-600")}>JSX Script Export</p>
                 </div>
               </div>
-              <p className="text-sm text-gray-700">
+              <p className={cn("text-sm text-gray-700")}>
                 Generate a JSX script that creates text layers with proper timing in After Effects.
               </p>
               <Button
                 onClick={handleAfterEffectsExport}
                 disabled={isExporting || captions.length === 0}
-                className="w-full bg-purple-600 hover:bg-purple-700"
+                className={cn("w-full bg-purple-600 hover:bg-purple-700")}
               >
-                <Download className="h-4 w-4 mr-2" />
+                <Download className={cn("h-4 w-4 mr-2")} />
                 Download .jsx
               </Button>
             </div>
           </Card>
 
-          <Card className="p-4 bg-white/5 border-white/10">
-            <div className="space-y-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                  <FileCode className="h-5 w-5 text-blue-600" />
+          <Card className={cn("p-4 bg-white/5 border-white/10")}>
+            <div className={cn("space-y-4")}>
+              <div className={cn("flex items-center space-x-3")}>
+                <div className={cn("w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center")}>
+                  <FileCode className={cn("h-5 w-5 text-blue-600")} />
                 </div>
                 <div>
-                  <h4 className="font-semibold text-gray-900">React Component</h4>
-                  <p className="text-sm text-gray-600">JSX Component Export</p>
+                  <h4 className={cn("font-semibold text-gray-900")}>React Component</h4>
+                  <p className={cn("text-sm text-gray-600")}>JSX Component Export</p>
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs text-gray-600">Component Name</label>
+              <div className={cn("space-y-2")}>
+                <label className={cn("text-xs text-gray-600")}>Component Name</label>
                 <Input
                   value={componentName}
                   onChange={(e) => setComponentName(e.target.value)}
                   placeholder="VideoCaptions"
-                  className="bg-white/10 border-white/20"
+                  className={cn("bg-white/10 border-white/20")}
                 />
               </div>
               <Dialog>
@@ -146,27 +146,27 @@ export function ExportOptions({ captions, projectName }: ExportOptionsProps) {
                   <Button
                     onClick={handleReactExport}
                     disabled={isExporting || captions.length === 0}
-                    className="w-full bg-blue-600 hover:bg-blue-700"
+                    className={cn("w-full bg-blue-600 hover:bg-blue-700")}
                   >
-                    <FileCode className="h-4 w-4 mr-2" />
+                    <FileCode className={cn("h-4 w-4 mr-2")} />
                     Generate Component
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-4xl max-h-[80vh] bg-white">
+                <DialogContent className={cn("max-w-4xl max-h-[80vh] bg-white")}>
                   <DialogHeader>
                     <DialogTitle>React Component Code</DialogTitle>
                   </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="flex justify-end">
+                  <div className={cn("space-y-4")}>
+                    <div className={cn("flex justify-end")}>
                       <Button onClick={copyToClipboard} size="sm">
-                        <Copy className="h-4 w-4 mr-2" />
+                        <Copy className={cn("h-4 w-4 mr-2")} />
                         Copy to Clipboard
                       </Button>
                     </div>
                     <Textarea
                       value={exportedCode}
                       readOnly
-                      className="font-mono text-sm h-96 bg-gray-50"
+                      className={cn("font-mono text-sm h-96 bg-gray-50")}
                     />
                   </div>
                 </DialogContent>
@@ -175,9 +175,9 @@ export function ExportOptions({ captions, projectName }: ExportOptionsProps) {
           </Card>
         </div>
 
-        <div className="bg-blue-50/50 border border-blue-200/50 rounded-lg p-4">
-          <h4 className="font-semibold text-blue-900 mb-2">Usage Instructions</h4>
-          <div className="space-y-2 text-sm text-blue-800">
+        <div className={cn("bg-blue-50/50 border border-blue-200/50 rounded-lg p-4")}>
+          <h4 className={cn("font-semibold text-blue-900 mb-2")}>Usage Instructions</h4>
+          <div className={cn("space-y-2 text-sm text-blue-800")}>
             <p><strong>After Effects:</strong> File → Scripts → Run Script File → Select downloaded .jsx file</p>
             <p><strong>React:</strong> Copy the component code and use with a video player that provides currentTime</p>
           </div>
@@ -186,3 +186,6 @@ export function ExportOptions({ captions, projectName }: ExportOptionsProps) {
     </Card>
   );
 }
+
+import { cn } from "@/lib/utils";
+

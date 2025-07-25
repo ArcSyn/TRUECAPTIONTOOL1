@@ -2,27 +2,26 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, '../../uploads');
+// Ensure the uploads directory exists
+const uploadsDir = path.resolve(__dirname, '../../uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configure multer for video uploads
+// Configure storage engine
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
+  destination: (_req, _file, cb) => {
     cb(null, uploadsDir);
   },
-  filename: (req, file, cb) => {
-    // Generate unique filename
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const extension = path.extname(file.originalname);
-    cb(null, `video-${uniqueSuffix}${extension}`);
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const ext = path.extname(file.originalname);
+    cb(null, `video-${uniqueSuffix}${ext}`);
   }
 });
 
-// File filter for video files
-const fileFilter = (req, file, cb) => {
+// Validate file type
+const fileFilter = (_req, file, cb) => {
   const allowedMimes = [
     'video/mp4',
     'video/mpeg',
@@ -30,19 +29,17 @@ const fileFilter = (req, file, cb) => {
     'video/x-msvideo',
     'video/webm'
   ];
-  
-  if (allowedMimes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Invalid file type. Only video files are allowed.'), false);
-  }
+  allowedMimes.includes(file.mimetype)
+    ? cb(null, true)
+    : cb(new Error('Invalid file type: only video files are allowed.'), false);
 };
 
+// Export upload middleware
 const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
+  storage,
+  fileFilter,
   limits: {
-    fileSize: 100 * 1024 * 1024 * 1024 // 100GB limit
+    fileSize: 100 * 1024 * 1024 * 1024 // 100GB
   }
 });
 

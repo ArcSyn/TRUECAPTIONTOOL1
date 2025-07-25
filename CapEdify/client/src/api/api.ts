@@ -15,7 +15,7 @@ const localApi = axios.create({
 
 
 
-let accessToken: string | null = null;
+const accessToken: string | null = null;
 
 const getApiInstance = (url: string) => {
   return localApi;

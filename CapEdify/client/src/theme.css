@@ -1,0 +1,17 @@
+@theme {
+  --color-border: oklch(0.72 0 0);
+  --color-foreground: oklch(0.1 0 0);
+  --color-background: oklch(1 0 0);
+  --color-ring: oklch(0.24 0.26 291.7);
+}
+
+/* Define the missing utility classes */
+.border-border {
+  border-color: var(--color-border);
+}
+.text-foreground {
+  color: var(--color-foreground);
+}
+.bg-background {
+  background-color: var(--color-background);
+}
