@@ -6,7 +6,7 @@ import { Progress } from './ui/progress';
 import { Card } from './ui/card';
 import { formatFileSize } from '@/utils/time';
 import { compressVideo } from '@/utils/compress';
-import { uploadVideo } from '@/api/video';
+import { uploadVideo } from '@/api/video-enhanced';
 import { useToast } from '@/hooks/useToast';
 import { VideoFile } from '@/types';
 import { cn } from '@/lib/utils';
@@ -49,11 +49,13 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
 
       const videoFile: VideoFile = {
         file: compressedFile,
-        url: videoUrl,
+        url: result.videoUrl,
         duration: result.duration,
         size: result.size,
         name: compressedFile.name,
         id: result.videoId,
+        transcriptionId: result.transcriptionId,
+        transcriptionStatus: result.transcriptionStatus,
       };
 
       onVideoUploaded(videoFile);

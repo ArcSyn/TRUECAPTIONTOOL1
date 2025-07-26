@@ -3,7 +3,9 @@ import { VideoUpload } from '@/components/VideoUpload';
 import { StepIndicator } from '@/components/StepIndicator';
 import { CaptionEditor } from '@/components/CaptionEditor';
 import { ExportOptions } from '@/components/ExportOptions';
+import { TranscriptionStatus } from '@/components/TranscriptionStatus';
 import { VideoFile, Caption } from '@/types';
+import { cn } from "@/lib/utils";
 
 type Step = 'upload' | 'transcribe' | 'edit' | 'export';
 
@@ -16,16 +18,23 @@ export function Home() {
   const handleVideoUploaded = (video: VideoFile) => {
     console.log('Video uploaded:', video.name);
     setVideoFile(video);
-    setCurrentStep('transcribe');
-    setCompletedSteps(['upload']);
+    // If auto-transcription is enabled, go directly to transcribe step
+    if (video.transcriptionId) {
+      setCurrentStep('transcribe');
+      setCompletedSteps(['upload']);
+    }
   };
 
-  const handleTranscriptionComplete = () => {
-    const dummyCaptions: Caption[] = [
-      { start: 0, end: 2, text: 'Hello world' },
-      { start: 2, end: 4, text: 'Welcome to CaptionFlow' },
-    ];
-    setCaptions(dummyCaptions);
+  const handleTranscriptionComplete = (transcriptionData: any) => {
+    // Convert transcription segments to captions
+    const newCaptions: Caption[] = transcriptionData?.segments?.map((segment: any, index: number) => ({
+      id: `caption-${index}`,
+      startTime: segment.start,
+      endTime: segment.end,
+      text: segment.text,
+    })) || [];
+    
+    setCaptions(newCaptions);
     setCurrentStep('edit');
     setCompletedSteps(['upload', 'transcribe']);
   };
@@ -69,16 +78,12 @@ export function Home() {
             <VideoUpload onVideoUploaded={handleVideoUploaded} />
           )}
 
-          {currentStep === 'transcribe' && videoFile && (
-            <div className={cn("space-y-4 text-center")}>
-              <p className={cn("text-gray-700")}>Video is ready for transcription.</p>
-              <button
-                className={cn("bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white transition")}
-                onClick={handleTranscriptionComplete}
-              >
-                Start Transcription (Mock)
-              </button>
-            </div>
+          {currentStep === 'transcribe' && videoFile && videoFile.transcriptionId && (
+            <TranscriptionStatus
+              transcriptionId={videoFile.transcriptionId}
+              videoTitle={videoFile.name}
+              onExportComplete={handleTranscriptionComplete}
+            />
           )}
 
           {currentStep === 'edit' && captions.length > 0 && (
@@ -103,6 +108,7 @@ export function Home() {
             <ExportOptions
               captions={captions}
               projectName={videoFile?.name || 'Project'}
+              transcriptionId={videoFile?.transcriptionId || ''}
             />
           )}
         </div>
@@ -110,6 +116,4 @@ export function Home() {
     </div>
   );
 }
-
-import { cn } from "@/lib/utils";
 

@@ -12,13 +12,12 @@ class VideoService {
       const { data, error } = await supabase
         .from('videos')
         .insert([{
-          storage_path: videoData.path,
-          public_url: videoData.publicUrl || '',
-          original_name: videoData.originalName,
+          filename: videoData.filename,
+          originalName: videoData.originalName,
+          mimetype: videoData.mimetype,
           size: videoData.size,
-          mime_type: videoData.mimetype,
-          status: 'uploaded',
-          created_at: new Date().toISOString()
+          path: videoData.path,
+          uploadedAt: new Date().toISOString()
         }])
         .select()
         .single();
@@ -57,7 +56,7 @@ class VideoService {
       const { data, error } = await supabase
         .from('videos')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('uploadedAt', { ascending: false });
 
       if (error) throw error;
       console.log(`Found ${data.length} videos`);
@@ -74,7 +73,7 @@ class VideoService {
       const video = await this.getVideoById(id);
 
       // Delete from storage if path exists
-      if (video.storage_path) {
+      if (video.path) {
         try {
           const { error: storageError } = await supabase
             .storage

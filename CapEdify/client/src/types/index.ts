@@ -1,3 +1,21 @@
+export interface ThemeColors {
+  primary: string;
+  secondary: string;
+  accent: string;
+  background: string;
+  surface: string;
+  text: string;
+  muted: string;
+  border: string;
+}
+
+export interface Theme {
+  id: string;
+  name: string;
+  mode: 'light' | 'dark';
+  colors: ThemeColors;
+}
+
 export interface Caption {
   id: string;
   startTime: number;
@@ -11,7 +29,9 @@ export interface VideoFile {
   duration: number;
   size: number;
   name: string;
-  id?: string; // Add optional id field for backend video ID
+  id?: string; // Backend video ID
+  transcriptionId?: string; // Auto-transcription ID
+  transcriptionStatus?: 'pending' | 'processing' | 'completed' | 'error';
 }
 
 export interface TranscriptionProgress {
@@ -20,17 +40,7 @@ export interface TranscriptionProgress {
   estimatedTime?: number;
 }
 
-export interface Theme {
-  id: string;
-  name: string;
-  colors: {
-    primary: string;
-    secondary: string;
-    accent: string;
-    background: string;
-    surface: string;
-  };
-}
+// End of file
 
 export interface ProjectData {
   id: string;

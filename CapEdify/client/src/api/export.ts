@@ -1,6 +1,40 @@
 import api from './api';
 import { Caption } from '@/types';
 
+export async function getExportFormats() {
+  try {
+    const response = await api.get('/api/export/formats');
+    return response.data;
+  } catch (error) {
+    console.error('Error getting export formats:', error);
+    throw error;
+  }
+}
+
+export async function getStyles() {
+  try {
+    const response = await api.get('/api/export/styles');
+    return response.data.styles;
+  } catch (error) {
+    console.error('Error getting styles:', error);
+    throw error;
+  }
+}
+
+export async function getPreview(transcriptionId: string, format: string, styles?: any) {
+  try {
+    const response = await api.post('/api/export/preview', {
+      transcriptionId,
+      format,
+      styles
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error getting preview:', error);
+    throw error;
+  }
+}
+
 // Description: Generate After Effects JSX export
 // Endpoint: POST /api/export/after-effects
 // Request: { captions: Caption[], projectName: string }

@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const videoService = require('../services/videoService');
-// ⚠️ Fix: middleware is in ../middleware, not ./middleware
-const upload      = require('../middleware/upload');
+const upload = require('../middleware/upload');
 const checkApiKey = require('../middleware/checkApiKey'); 
 const { createClient } = require('@supabase/supabase-js');
+const fs = require('fs').promises;
+const path = require('path');
 require('dotenv').config();
 
 // Initialize Supabase client with service role key
@@ -28,17 +29,43 @@ router.post(
 
       console.log('Video upload request received:', req.file.originalname);
 
+      // Upload to Supabase Storage
+      const fileExt = path.extname(req.file.originalname);
+      const fileName = `videos/${Date.now()}${fileExt}`;
+      
+      const fileBuffer = await fs.readFile(req.file.path);
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, fileBuffer, {
+          contentType: req.file.mimetype,
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('videos')
+        .getPublicUrl(fileName);
+
+      const publicUrl = publicUrlData?.publicUrl;
+      if (!publicUrl) throw new Error('Failed to get public URL');
+
       const videoData = {
-        filename: req.file.filename,
+        path: fileName,
+        publicUrl: publicUrl,
         originalName: req.file.originalname,
         mimetype: req.file.mimetype,
         size: req.file.size,
-        path: req.file.path,
-        duration: 0,
         status: 'uploaded',
       };
 
       const video = await videoService.createVideo(videoData);
+
+      // Clean up local file
+      await fs.unlink(req.file.path);
 
       // Log usage for rate limiting in Supabase table "usage_logs"
       await supabase.from('usage_logs').insert([
@@ -50,10 +77,10 @@ router.post(
 
       res.json({
         success: true,
-        videoId: video._id,
-        duration: video.duration,
+        videoId: video.id,
+        url: publicUrl,
         size: video.size,
-        filename: video.originalName,
+        duration: 0
       });
     } catch (error) {
       console.error('Video upload error:', error);
