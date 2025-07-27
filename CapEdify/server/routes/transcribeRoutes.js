@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const groqService = require('../services/groqService');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(
@@ -40,9 +41,7 @@ router.post('/', async (req, res) => {
     if (updateError) throw updateError;
 
     // 3. Start transcription process
-    const transcriptionPromise = model === 'groq' 
-      ? transcribeWithGroq(video.public_url, transcriptionId)
-      : transcribeWithWhisper(video.public_url, transcriptionId);
+    const transcriptionPromise = groqService.transcribe(video.public_url, transcriptionId);
 
     // 4. Process transcription asynchronously
     transcriptionPromise
@@ -78,20 +77,37 @@ router.post('/', async (req, res) => {
   }
 });
 
-const groqService = require('../services/groqService');
+// GET /api/transcribe/:id
+router.get('/:id', async (req, res) => {
+  try {
+    const transcriptionId = req.params.id;
+    
+    // Fetch transcription data from Supabase
+    const { data: transcription, error } = await supabase
+      .from('transcriptions')
+      .select('*, videos:video_id(*)')
+      .eq('id', transcriptionId)
+      .single();
 
-async function transcribeWithGroq(videoUrl, transcriptionId) {
-  return groqService.transcribe(videoUrl, transcriptionId);
-}
+    if (error) {
+      console.error('Transcription fetch error:', error);
+      return res.status(404).json({
+        success: false,
+        error: 'Transcription not found'
+      });
+    }
 
-async function transcribeWithWhisper(videoUrl, transcriptionId) {
-  // Fallback to Groq since we're using it as primary
-  return transcribeWithGroq(videoUrl, transcriptionId);
-}
-
-async function transcribeWithWhisper(videoUrl, transcriptionId) {
-  // Fallback to Groq since we're using it as primary
-  return transcribeWithGroq(videoUrl, transcriptionId);
-}
+    return res.json({
+      success: true,
+      transcription
+    });
+  } catch (error) {
+    console.error('Error fetching transcription:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch transcription'
+    });
+  }
+});
 
 module.exports = router;

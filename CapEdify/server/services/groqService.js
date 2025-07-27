@@ -1,6 +1,7 @@
 const { Groq } = require("groq-sdk");
 const axios = require('axios');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 const ffmpeg = require('fluent-ffmpeg');
@@ -37,7 +38,7 @@ class GroqService {
       try {
         // Use Groq's Whisper API for transcription
         const transcription = await groq.audio.transcriptions.create({
-          file: fs.createReadStream(tempAudioPath),
+          file: fsSync.createReadStream(tempAudioPath),
           model: "whisper-large-v3",
           prompt: "Transcribe this audio with precise timing and formatting.",
           response_format: "verbose_json",

@@ -1,0 +1,169 @@
+import api from './api';
+import { Caption } from '@/types';
+
+export async function getExportFormats() {
+  try {
+    const response = await api.get('/api/export/formats');
+    return response.data;
+  } catch (error) {
+    console.error('Error getting export formats:', error);
+    throw error;
+  }
+}
+
+export async function getStyles() {
+  try {
+    const response = await api.get('/api/export/styles');
+    return response.data.styles;
+  } catch (error) {
+    console.error('Error getting styles:', error);
+    throw error;
+  }
+}
+
+export async function getPreview(transcriptionId: string, format: string, styles?: any) {
+  try {
+    const response = await api.post('/api/export/preview', {
+      transcriptionId,
+      format,
+      styles
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error getting preview:', error);
+    throw error;
+  }
+}
+
+// Description: Generate After Effects JSX export
+// Endpoint: POST /api/export/jsx/enhanced
+// Request: { transcriptionId, styleName, sceneMode, gapThreshold, captions }
+// Response: { success: boolean, jsxCode: string }
+export async function exportEnhancedJSX(
+  transcriptionId: string, 
+  options: {
+    styleName?: string, 
+    sceneMode?: boolean, 
+    gapThreshold?: number,
+    captions?: Caption[]
+  } = {}
+) {
+  try {
+    const requestData: any = { 
+      transcriptionId,
+      styleName: options.styleName || 'modern',
+      sceneMode: options.sceneMode || false,
+      gapThreshold: options.gapThreshold || 2.0
+    };
+    
+    // If captions are provided, include them
+    if (options.captions && options.captions.length > 0) {
+      requestData.captions = options.captions;
+      delete requestData.transcriptionId; // Remove transcriptionId if captions are provided
+    }
+    
+    const response = await api.post('/api/export/jsx/enhanced', requestData);
+    return response.data;
+  } catch (error) {
+    console.error('Error exporting enhanced JSX:', error);
+    throw error;
+  }
+}
+
+// Description: Generate React JSX component export
+// Endpoint: POST /api/export/jsx/react
+// Request: { transcriptionId, componentName, captions }
+// Response: { success: boolean, jsxCode: string }
+export async function generateReactExport(
+  transcriptionId: string,
+  componentName: string,
+  captions?: Caption[]
+) {
+  try {
+    const requestData: any = {
+      transcriptionId,
+      componentName
+    };
+    
+    // If captions are provided, include them
+    if (captions && captions.length > 0) {
+      requestData.captions = captions;
+      delete requestData.transcriptionId; // Remove transcriptionId if captions are provided
+    }
+    
+    const response = await api.post('/api/export/jsx/react', requestData);
+    return response.data;
+  } catch (error) {
+    console.error('Error generating React export:', error);
+    throw error;
+  }
+}
+
+// Get JSX styles
+export async function getJSXStyles() {
+  try {
+    const response = await api.get('/api/export/jsx/styles');
+    return response.data;
+  } catch (error) {
+    console.error('Error getting JSX styles:', error);
+    throw error;
+  }
+}
+
+// Export to scenes
+export async function exportToScenes(
+  transcriptionId: string, 
+  options: {
+    styleName?: string,
+    gapThreshold?: number,
+    captions?: Caption[]
+  } = {}
+) {
+  try {
+    const requestData: any = { 
+      transcriptionId,
+      styleName: options.styleName || 'modern',
+      gapThreshold: options.gapThreshold || 2.0
+    };
+    
+    // If captions are provided, include them
+    if (options.captions && options.captions.length > 0) {
+      requestData.captions = options.captions;
+      delete requestData.transcriptionId; // Remove transcriptionId if captions are provided
+    }
+    
+    const response = await api.post('/api/export/jsx/scenes', requestData);
+    return response.data;
+  } catch (error) {
+    console.error('Error exporting to scenes:', error);
+    throw error;
+  }
+}
+
+// Preview JSX output
+export async function previewJSX(
+  transcriptionId: string,
+  options: {
+    styleName?: string,
+    captions?: Caption[]
+  } = {}
+) {
+  try {
+    const requestData: any = { 
+      transcriptionId,
+      styleName: options.styleName || 'modern'
+    };
+    
+    // If captions are provided, include them
+    if (options.captions && options.captions.length > 0) {
+      requestData.captions = options.captions;
+      delete requestData.transcriptionId; // Remove transcriptionId if captions are provided
+    }
+    
+    const response = await api.post('/api/export/jsx/preview', requestData);
+    return response.data;
+  } catch (error) {
+    console.error('Error previewing JSX:', error);
+    throw error;
+  }
+}

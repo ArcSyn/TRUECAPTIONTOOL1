@@ -5,7 +5,6 @@ import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Card } from './ui/card';
 import { formatFileSize } from '@/utils/time';
-import { compressVideo } from '@/utils/compress';
 import { uploadVideo } from '@/api/video-enhanced';
 import { useToast } from '@/hooks/useToast';
 import { VideoFile } from '@/types';
@@ -33,26 +32,21 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
     setUploadProgress(0);
 
     try {
-      let compressedFile: File = file;
+      // Skip client-side compression - server handles ultra-compression
+      console.log('Uploading original file - server will handle compression');
 
-      try {
-        compressedFile = await compressVideo(file);
-      } catch (compressionError) {
-        console.warn('Compression failed, uploading original file.', compressionError);
-      }
-
-      const result = await uploadVideo(compressedFile, (progress: number) => {
+      const result = await uploadVideo(file, (progress: number) => {
         setUploadProgress(progress);
       });
 
-      const videoUrl = URL.createObjectURL(compressedFile);
+      const videoUrl = URL.createObjectURL(file);
 
       const videoFile: VideoFile = {
-        file: compressedFile,
+        file: file,
         url: result.videoUrl,
         duration: result.duration,
         size: result.size,
-        name: compressedFile.name,
+        name: file.name,
         id: result.videoId,
         transcriptionId: result.transcriptionId,
         transcriptionStatus: result.transcriptionStatus,
@@ -63,7 +57,7 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
 
       toast({
         title: 'Upload successful',
-        description: `${compressedFile.name} uploaded.`,
+        description: `${file.name} uploaded.`,
       });
     } catch (err: any) {
       console.error('Upload failed:', err);

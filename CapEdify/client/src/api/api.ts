@@ -1,16 +1,23 @@
 import axios, { AxiosRequestConfig, AxiosError, InternalAxiosRequestConfig, AxiosInstance } from 'axios';
 import JSONbig from 'json-bigint';
 
-
-
 const localApi = axios.create({
+  baseURL: 'http://localhost:4000',
   headers: {
     'Content-Type': 'application/json',
   },
   validateStatus: (status) => {
     return status >= 200 && status < 300;
   },
-  transformResponse: [(data) => JSONbig.parse(data)]
+  // Fix the transformResponse to handle empty responses properly
+  transformResponse: [(data) => {
+    if (!data) return null;
+    try {
+      return JSONbig.parse(data);
+    } catch (err) {
+      return data;
+    }
+  }]
 });
 
 

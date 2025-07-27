@@ -3,3 +3,10 @@
   height: 1rem;
   border-radius: 0.25rem;
 }
+
+/* Color swatches for style selection */
+[data-color="#FFFFFF"] { background-color: #FFFFFF; }
+[data-color="#FFFF00"] { background-color: #FFFF00; }
+[data-color="#00FFFF"] { background-color: #00FFFF; }
+[data-color="#00FF00"] { background-color: #00FF00; }
+[data-color="#FF00FF"] { background-color: #FF00FF; }

@@ -1,0 +1,39 @@
+1
+00:00:10,500 --> 00:00:13,240
+Welcome to our enhanced caption system
+
+2
+00:00:13,500 --> 00:00:16,800
+This video demonstrates the new JSX export functionality
+
+3
+00:00:17,100 --> 00:00:20,400
+You can now export captions with professional styling
+
+4
+00:00:22,000 --> 00:00:25,300
+The system supports multiple style templates
+
+5
+00:00:25,600 --> 00:00:28,900
+Including modern, minimal, and bold designs
+
+6
+00:00:31,500 --> 00:00:34,800
+Scene mode automatically detects natural breaks
+
+7
+00:00:35,100 --> 00:00:38,400
+And creates separate JSX files for each scene
+
+8
+00:00:40,000 --> 00:00:43,300
+Perfect for complex video projects
+
+9
+00:00:43,600 --> 00:00:46,900
+With precise timing and animation support
+
+10
+00:00:47,200 --> 00:00:50,500
+Import directly into After Effects for professional results

@@ -3,3 +3,53 @@
 @import "tailwindcss/utilities";
 
 @import "./styles/theme.css";
+
+/* Enhanced Theme Transitions */
+html {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Neon Theme Overrides */
+html.neon {
+  background: #000000;
+  color: #39ff14;
+}
+
+html.neon .bg-background {
+  background-color: #000000 !important;
+}
+
+html.neon .text-foreground {
+  color: #39ff14 !important;
+}
+
+html.neon .border-border {
+  border-color: #39ff14 !important;
+}
+
+/* Mystic Theme Overrides */
+html.mystic {
+  background: linear-gradient(135deg, #0f0f23 0%, #1a1a3a 100%);
+  color: #ffffff;
+}
+
+html.mystic .bg-background {
+  background: linear-gradient(135deg, #0f0f23 0%, #1a1a3a 100%) !important;
+}
+
+html.mystic .text-foreground {
+  color: #ffffff !important;
+}
+
+html.mystic .border-border {
+  border-color: #6e44ff !important;
+}
+
+/* Theme-specific glow effects */
+html.neon *:focus {
+  box-shadow: 0 0 20px #39ff14;
+}
+
+html.mystic *:focus {
+  box-shadow: 0 0 20px #6e44ff;
+}

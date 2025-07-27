@@ -7,7 +7,7 @@ export function useAutoSave<T>(
   delay: number = 5000
 ) {
   const { toast } = useToast();
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedRef = useRef<string>('');
 
   useEffect(() => {

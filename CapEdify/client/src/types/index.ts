@@ -36,7 +36,7 @@ export interface VideoFile {
 
 export interface TranscriptionProgress {
   progress: number;
-  status: 'idle' | 'processing' | 'completed' | 'error';
+  status: 'idle' | 'pending' | 'processing' | 'completed' | 'error';
   estimatedTime?: number;
 }
 

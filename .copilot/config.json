@@ -1,0 +1,21 @@
+{
+  "intent": "CapEdify is now in Phase 3. Focus on adding authentication routes, CLI login support, and deployment prep (Docker, Railway). Only use real endpoints, no mock logic. Keep all existing JSX export and transcription routes stable. Never break API responses or CLI output formatting.",
+  "phase": "3",
+  "priorities": [
+    "authentication_endpoints",
+    "cli_auth_support", 
+    "deployment_configs",
+    "user_project_tracking",
+    "frontend_ux_polish"
+  ],
+  "constraints": {
+    "never_break": [
+      "transcription_api",
+      "jsx_export_logic", 
+      "cli_commands",
+      "json_responses"
+    ],
+    "always_use": "real_api_endpoints",
+    "avoid": "mock_servers"
+  }
+}

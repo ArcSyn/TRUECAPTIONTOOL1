@@ -177,6 +177,10 @@
             margin: 20px 0;
             display: none;
         }
+        
+        .hidden-input {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -190,7 +194,7 @@
             <button class="upload-btn" type="button">Choose Video File</button>
         </div>
         
-        <input type="file" id="fileInput" accept="video/*" style="display: none;">
+        <input type="file" id="fileInput" accept="video/*" class="hidden-input">
         
         <div class="error" id="errorContainer"></div>
         <div class="success" id="successContainer"></div>
@@ -311,7 +315,7 @@
                 }
                 
                 const uploadData = await uploadResponse.json();
-                currentVideoId = uploadData.video.id;
+                currentVideoId = uploadData.videoId;
                 
                 progressText.textContent = 'Starting transcription...';
                 progressFill.style.width = '30%';
@@ -372,3 +376,4 @@
     </script>
 </body>
 </html>
+

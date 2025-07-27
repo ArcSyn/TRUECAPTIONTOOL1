@@ -48,19 +48,52 @@ export function TranscriptionStatus({
 
     const fetchTranscription = async () => {
       try {
-        const response = await fetch(`http://localhost:4000/api/transcriptions/${transcriptionId}`);
-        const data = await response.json();
+        const response = await fetch(`http://localhost:4000/api/transcribe/${transcriptionId}`);
         
-        if (data.success) {
-          setTranscription(data.transcription);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Transcription fetch failed:', errorText);
+          toast({
+            variant: 'destructive',
+            description: `Transcription not available: ${errorText}`
+          });
+          setIsLoading(false);
+          return;
+        }
+        
+        try {
+          const data = await response.json();
           
-          // Stop polling if completed or error
-          if (data.transcription.status === 'completed' || data.transcription.status === 'error') {
+          if (data.success) {
+            setTranscription(data.transcription);
+            
+            // Stop polling if completed or error
+            if (data.transcription.status === 'completed' || data.transcription.status === 'error') {
+              setIsLoading(false);
+            }
+          } else {
+            const errorMsg = data.error || 'Failed to fetch transcription data';
+            console.error('Transcription fetch error:', errorMsg);
+            toast({
+              variant: 'destructive',
+              description: errorMsg
+            });
             setIsLoading(false);
           }
+        } catch (parseError) {
+          console.error('JSON parse error:', parseError);
+          toast({
+            variant: 'destructive',
+            description: 'Invalid response from server - unable to parse data'
+          });
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error('Failed to fetch transcription:', error);
+      } catch (networkError) {
+        console.error('Network error fetching transcription:', networkError);
+        toast({
+          variant: 'destructive',
+          description: 'Could not connect to the server'
+        });
         setIsLoading(false);
       }
     };
@@ -85,7 +118,7 @@ export function TranscriptionStatus({
 
     setIsExporting(true);
     try {
-      const response = await fetch(`http://localhost:4000/api/transcriptions/${transcriptionId}/export`, {
+      const response = await fetch(`http://localhost:4000/api/export/${transcriptionId}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -93,25 +126,46 @@ export function TranscriptionStatus({
         body: JSON.stringify({ formats })
       });
 
-      const data = await response.json();
-      
-      if (data.success) {
-        setExports(data.exports);
-        onExportComplete?.(data.exports);
-        
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Export failed:', errorText);
         toast({
-          title: 'Export completed!',
-          description: `Generated ${Object.keys(data.exports).length} caption formats`,
+          variant: 'destructive',
+          description: `Export request failed: ${errorText}`
         });
-      } else {
-        throw new Error(data.error);
+        return;
       }
-    } catch (error) {
-      console.error('Export failed:', error);
+      
+      try {
+        const data = await response.json();
+        
+        if (data.success) {
+          setExports(data.exports);
+          onExportComplete?.(data.exports);
+          
+          toast({
+            description: `Generated ${Object.keys(data.exports).length} caption formats`,
+          });
+        } else {
+          const errorMsg = data.error || 'Export failed';
+          console.error('Export error:', errorMsg);
+          toast({
+            variant: 'destructive',
+            description: errorMsg
+          });
+        }
+      } catch (parseError) {
+        console.error('JSON parse error in export:', parseError);
+        toast({
+          variant: 'destructive',
+          description: 'Invalid response from server - unable to parse export data'
+        });
+      }
+    } catch (networkError) {
+      console.error('Network error during export:', networkError);
       toast({
-        title: 'Export failed',
-        description: 'Could not generate caption files',
         variant: 'destructive',
+        description: 'Could not connect to the server for export'
       });
     } finally {
       setIsExporting(false);
