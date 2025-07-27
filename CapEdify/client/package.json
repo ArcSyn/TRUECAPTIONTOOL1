@@ -4,7 +4,9 @@
   "scripts": {
     "dev": "vite --port 5173 --strictPort",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "devtools": "npx react-devtools",
+    "dev:debug": "concurrently \"npm run dev\" \"npm run devtools\""
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -49,6 +51,7 @@
     "concurrently": "^9.2.0",
     "electron": "^37.2.4",
     "postcss": "^8.5.6",
+    "react-devtools": "^5.3.1",
     "tailwindcss": "^3.3.0",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.3.3",

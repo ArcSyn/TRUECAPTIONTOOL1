@@ -182,6 +182,60 @@ router.get('/formats', (req, res) => {
   res.json({ success: true, formats });
 });
 
+// GET /api/export/jsx/enhanced - Enhanced JSX export with styling and scenes (query params)
+router.get('/jsx/enhanced', async (req, res) => {
+  try {
+    console.log('🎭 JSX Export request received:', req.query);
+    
+    const { 
+      id: transcriptionId,
+      style = 'modern',
+      scene_detection = 'false',
+      project_name
+    } = req.query;
+
+    if (!transcriptionId) {
+      console.error('❌ No transcription ID provided');
+      return res.status(400).json({
+        success: false,
+        error: 'Transcription ID is required'
+      });
+    }
+
+    const options = {
+      projectName: project_name || `captions_${style}_${Date.now()}`,
+      styleName: style,
+      sceneMode: scene_detection === 'true',
+      gapThreshold: 2.0
+    };
+
+    console.log('🎯 Generating JSX with options:', options);
+    const result = await jsxExportService.exportToJSX(transcriptionId, options);
+    console.log('📝 JSX generation result:', { success: result.success, dataLength: result.data?.length });
+
+    if (!result.success) {
+      console.error('❌ JSX generation failed:', result.error);
+      return res.status(500).json(result);
+    }
+
+    // Set headers for After Effects JSX download
+    const filename = `${options.projectName.replace(/[^a-zA-Z0-9_-]/g, '_')}.jsx`;
+    console.log('📤 Sending JSX file:', filename);
+    
+    res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(result.data);
+
+  } catch (error) {
+    console.error('❌ Enhanced JSX Export (GET) error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message || 'Failed to export enhanced JSX' 
+    });
+  }
+});
+
 // POST /api/export/jsx/enhanced - Enhanced JSX export with styling and scenes
 router.post('/jsx/enhanced', async (req, res) => {
   try {

@@ -8,15 +8,16 @@
     "minimist": "^1.2.8"
   },
   "scripts": {
-    "dev": "vite",
-    "ff": "node scripts/ff.js",
-    "jsx-export": "node scripts/jsx-export-cli.js",
-    "jsx-help": "node scripts/jsx-export-cli.js --help",
+    "dev": "powershell -ExecutionPolicy Bypass -File start-dev.ps1",
     "server": "cd CapEdify/server && node server.js",
     "client": "cd CapEdify/client && npm run dev",
-    "start": "concurrently \"npm run server\" \"npm run client\""
+    "start": "npm run dev",
+    "ff": "node scripts/ff.js",
+    "jsx-export": "node scripts/jsx-export-cli.js",
+    "jsx-help": "node scripts/jsx-export-cli.js --help"
   },
   "devDependencies": {
-    "@ffmpeg/ffmpeg": "0.12.15"
+    "@ffmpeg/ffmpeg": "0.12.15",
+    "concurrently": "^8.2.0"
   }
 }

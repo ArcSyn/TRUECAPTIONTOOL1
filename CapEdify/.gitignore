@@ -5,3 +5,24 @@ client/node_modules/
 client/package-lock.json
 node_modules/
 package-lock.json
+
+# Large binary files and user data
+server/uploads/
+server/data/
+whisper-cpp/
+*.mp4
+*.avi
+*.mov
+*.wav
+*.bin
+*.exe
+*.dll
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Temporary files
+temp/
+tmp/

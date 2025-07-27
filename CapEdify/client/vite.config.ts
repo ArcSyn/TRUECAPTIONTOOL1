@@ -10,8 +10,11 @@ export default defineConfig({
     },
   },
   server: {
-    host: true,
+    host: '0.0.0.0', // More explicit than true for Windows
     port: 5173,
+    strictPort: true, // Fail if port is in use
+    open: false, // Prevent auto-opening browser
+    cors: true,
     proxy: {
       '/api': {
         target: 'http://localhost:4000',
@@ -40,7 +43,12 @@ export default defineConfig({
       '.pythagora.ai'
     ],
     watch: {
-      ignored: ['**/node_modules/**', '**/dist/**', '**/public/**', '**/log/**']
+      ignored: ['**/node_modules/**', '**/dist/**', '**/public/**', '**/log/**'],
+      usePolling: process.platform === 'win32', // Fix Windows file watching
+      interval: 1000 // Polling interval for Windows
+    },
+    fs: {
+      strict: false // Allow serving files outside of root
     }
   },
 })

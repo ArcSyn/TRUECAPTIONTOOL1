@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:*)",
+      "Bash(taskkill:*)",
+      "Bash(npm start)",
+      "Bash(mkdir:*)",
+      "Bash(curl:*)",
+      "Bash(unzip:*)",
+      "Bash(ls:*)",
+      "Bash(node:*)",
+      "Bash(cp:*)",
+      "Bash(./main.exe --help)",
+      "Bash(./whisper-cli.exe:*)",
+      "Bash(ffmpeg:*)",
+      "Bash(\"./whisper-cpp/Release/whisper-cli.exe\":*)",
+      "Bash(cat:*)",
+      "Bash(rm:*)",
+      "Bash(find:*)",
+      "Bash(npm run start:local:*)",
+      "Bash(.whisper-cli.exe:*)",
+      "Bash(powershell:*)"
+    ],
+    "deny": []
+  }
+}

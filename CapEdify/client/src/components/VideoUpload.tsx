@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, File, X } from 'lucide-react';
 import { Button } from './ui/button';
@@ -9,6 +9,8 @@ import { uploadVideo } from '@/api/video-enhanced';
 import { useToast } from '@/hooks/useToast';
 import { VideoFile } from '@/types';
 import { cn } from '@/lib/utils';
+import { DebugUpload } from './DebugInfo';
+import '@/utils/debug'; // Initialize backend status checker
 // Optional step navigation
 // import { useStep } from '@/hooks/useStep';
 
@@ -20,6 +22,7 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [lastError, setLastError] = useState<any>(null);
   const { toast } = useToast();
   // const { setStep } = useStep(); // Optional, uncomment if using a step system
 
@@ -61,9 +64,23 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
       });
     } catch (err: any) {
       console.error('Upload failed:', err);
+      setLastError(err);
+      
+      let errorMessage = 'Could not upload video.';
+      
+      if (err.message) {
+        if (err.message.includes('Failed to fetch')) {
+          errorMessage = 'Cannot connect to server. Please ensure the backend is running on port 4000.';
+        } else if (err.message.includes('NetworkError')) {
+          errorMessage = 'Network error. Please check your internet connection.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
       toast({
         title: 'Upload failed',
-        description: err?.message || 'Could not upload video.',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -150,6 +167,13 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
           )}
         </div>
       </div>
+      
+      <DebugUpload 
+        uploadProgress={uploadProgress}
+        isUploading={isUploading}
+        uploadedFile={uploadedFile}
+        error={lastError}
+      />
     </Card>
   );
 }

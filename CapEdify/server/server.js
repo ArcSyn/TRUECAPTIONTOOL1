@@ -1,5 +1,13 @@
 // Load environment variables
 require("dotenv").config();
+
+// Debug environment variables
+console.log('🔧 Environment variables loaded:');
+console.log(`🔧 TRANSCRIPTION_MODE: ${process.env.TRANSCRIPTION_MODE}`);
+console.log(`🔧 WHISPER_MODEL: ${process.env.WHISPER_MODEL}`);
+console.log(`🔧 GROQ_API_KEY: ${process.env.GROQ_API_KEY ? 'SET' : 'NOT SET'}`);
+console.log(`🔧 PORT: ${process.env.PORT}`);
+
 const express = require("express");
 const session = require("express-session");
 const basicRoutes = require("./routes/index");
@@ -21,7 +29,7 @@ app.enable('json spaces');
 app.enable('strict routing');
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: ['http://localhost:5173', 'http://localhost:5174'],
   credentials: true
 }));
 app.use(express.json());

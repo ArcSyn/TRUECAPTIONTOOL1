@@ -40,78 +40,158 @@ export function TranscriptionStatus({
   const [isExporting, setIsExporting] = useState(false);
   const [exports, setExports] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
+  const [startTime, setStartTime] = useState<Date | null>(null);
   const { toast } = useToast();
 
   // Poll for transcription status
   useEffect(() => {
     if (!transcriptionId) return;
+    
+    // Set start time for timeout tracking
+    if (!startTime) {
+      setStartTime(new Date());
+    }
 
     const fetchTranscription = async () => {
       try {
+        console.log(`🔍 Polling transcription status (attempt ${retryCount + 1})...`);
+        
         const response = await fetch(`http://localhost:4000/api/transcribe/${transcriptionId}`);
         
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('Transcription fetch failed:', errorText);
-          toast({
-            variant: 'destructive',
-            description: `Transcription not available: ${errorText}`
-          });
-          setIsLoading(false);
+          console.error('❌ Transcription fetch failed:', errorText);
+          
+          // Increment retry count and show timeout if too many failures
+          if (retryCount >= 10) {
+            toast({
+              variant: 'destructive',
+              title: 'Transcription Timeout',
+              description: 'Transcription is taking too long. Please try uploading a shorter video or try again later.'
+            });
+            setIsLoading(false);
+            return;
+          }
+          
+          setRetryCount(prev => prev + 1);
           return;
         }
         
-        try {
-          const data = await response.json();
+        const data = await response.json();
           
           if (data.success) {
-            setTranscription(data.transcription);
+            const transcriptionData = data.transcription;
+            setTranscription(transcriptionData);
+            
+            console.log(`📊 Status: ${transcriptionData.status} (${transcriptionData.progress}%)`);
+            
+            // Reset retry count on successful fetch
+            setRetryCount(0);
+            
+            // Check for timeout on frontend side too
+            if (transcriptionData.status === 'processing' && startTime) {
+              const elapsedMinutes = (new Date().getTime() - startTime.getTime()) / (1000 * 60);
+              
+              if (elapsedMinutes > 5) {
+                console.log('⚠️  Frontend timeout detected');
+                toast({
+                  variant: 'destructive',
+                  title: 'Transcription Stalled',
+                  description: 'Processing is taking longer than expected. Please try again with a shorter video.'
+                });
+                setIsLoading(false);
+                return;
+              }
+              
+              // Show progress message
+              if (transcriptionData.progress === 50) {
+                console.log('🤖 Still processing with Groq API...');
+              }
+            }
             
             // Stop polling if completed or error
-            if (data.transcription.status === 'completed' || data.transcription.status === 'error') {
+            if (transcriptionData.status === 'completed') {
+              console.log('✅ Transcription completed!');
+              toast({
+                title: 'Transcription Complete!',
+                description: 'Your video has been successfully transcribed.'
+              });
+              setIsLoading(false);
+            } else if (transcriptionData.status === 'error') {
+              console.log('❌ Transcription failed');
+              toast({
+                variant: 'destructive',
+                title: 'Transcription Failed',
+                description: transcriptionData.error || 'An error occurred during transcription'
+              });
               setIsLoading(false);
             }
           } else {
             const errorMsg = data.error || 'Failed to fetch transcription data';
-            console.error('Transcription fetch error:', errorMsg);
-            toast({
-              variant: 'destructive',
-              description: errorMsg
-            });
-            setIsLoading(false);
+            console.error('❌ Transcription fetch error:', errorMsg);
+            
+            if (retryCount >= 10) {
+              toast({
+                variant: 'destructive',
+                title: 'Connection Failed',
+                description: 'Unable to connect to transcription service after multiple attempts'
+              });
+              setIsLoading(false);
+            } else {
+              setRetryCount(prev => prev + 1);
+            }
           }
         } catch (parseError) {
-          console.error('JSON parse error:', parseError);
-          toast({
-            variant: 'destructive',
-            description: 'Invalid response from server - unable to parse data'
-          });
-          setIsLoading(false);
+          console.error('❌ JSON parse error:', parseError);
+          
+          if (retryCount >= 10) {
+            toast({
+              variant: 'destructive',
+              title: 'Server Error',
+              description: 'Server returned invalid data after multiple attempts'
+            });
+            setIsLoading(false);
+          } else {
+            setRetryCount(prev => prev + 1);
+          }
         }
       } catch (networkError) {
-        console.error('Network error fetching transcription:', networkError);
-        toast({
-          variant: 'destructive',
-          description: 'Could not connect to the server'
-        });
-        setIsLoading(false);
+        console.error('❌ Network error fetching transcription:', networkError);
+        
+        if (retryCount >= 10) {
+          toast({
+            variant: 'destructive',
+            title: 'Connection Failed',
+            description: 'Could not connect to the server after multiple attempts'
+          });
+          setIsLoading(false);
+        } else {
+          setRetryCount(prev => prev + 1);
+        }
       }
     };
 
     fetchTranscription();
 
-    // Poll every 2 seconds if still processing
+    // Poll every 3 seconds if still processing (increased from 2s to reduce load)
     const interval = setInterval(() => {
       if (transcription?.status === 'completed' || transcription?.status === 'error') {
         clearInterval(interval);
         setIsLoading(false);
         return;
       }
+      
+      // Show different messages based on progress
+      if (transcription?.progress === 50) {
+        console.log('⏳ Still transcribing with Groq API... (this may take 1-3 minutes)');
+      }
+      
       fetchTranscription();
-    }, 2000);
+    }, 3000);
 
     return () => clearInterval(interval);
-  }, [transcriptionId, transcription?.status]);
+  }, [transcriptionId, transcription?.status, retryCount, startTime]);
 
   const handleExport = async (formats: string[] = ['srt', 'jsx', 'vtt']) => {
     if (!transcription || transcription.status !== 'completed') return;
