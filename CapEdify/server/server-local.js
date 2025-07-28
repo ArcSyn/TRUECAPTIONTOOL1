@@ -3,6 +3,19 @@ require("dotenv").config();
 
 console.log('🏠 Starting CapEdify LOCAL Server (No Supabase)...');
 
+// Global error handlers to prevent server crashes
+process.on('uncaughtException', (error) => {
+  console.error('❌ UNCAUGHT EXCEPTION - Server would crash without this handler:', error);
+  console.error('❌ Stack trace:', error.stack);
+  // Don't exit - keep server running
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ UNHANDLED PROMISE REJECTION - Server would crash without this handler:', reason);
+  console.error('❌ Promise:', promise);
+  // Don't exit - keep server running
+});
+
 // Debug environment variables
 console.log('🔧 Environment variables loaded:');
 console.log(`🔧 TRANSCRIPTION_MODE: ${process.env.TRANSCRIPTION_MODE}`);
@@ -391,12 +404,25 @@ function loadJSON(file) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (error) {
+    console.warn(`⚠️ JSON load warning for ${file}:`, error.message);
     return {};
   }
 }
 
 function saveJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.error(`❌ JSON save error for ${file}:`, error.message);
+    // Try creating directory if it doesn't exist
+    const dir = path.dirname(file);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    } else {
+      throw error; // Re-throw if it's not a directory issue
+    }
+  }
 }
 
 // Configure multer for file uploads
@@ -619,31 +645,47 @@ app.post('/api/transcribe', async (req, res) => {
 
     console.log('✅ Transcription status updated to processing');
 
-    // Start transcription process asynchronously
+    // Start transcription process asynchronously with enhanced error handling
     console.log('🚀 Starting background transcription process...');
     
-    localWhisperTranscribe(video.path, transcriptionId)
-      .then(result => {
+    (async () => {
+      try {
+        const result = await localWhisperTranscribe(video.path, transcriptionId);
         console.log('✅ Transcription completed successfully');
         
-        // Update transcription with result
-        const currentTranscriptions = loadJSON(transcriptionsFile);
-        currentTranscriptions[transcriptionId].status = 'completed';
-        currentTranscriptions[transcriptionId].progress = 100;
-        currentTranscriptions[transcriptionId].result = result;
-        currentTranscriptions[transcriptionId].updated_at = new Date().toISOString();
-        saveJSON(transcriptionsFile, currentTranscriptions);
-      })
-      .catch(error => {
-        console.error('❌ Transcription failed:', error.message);
+        // Update transcription with result - wrapped in try/catch
+        try {
+          const currentTranscriptions = loadJSON(transcriptionsFile);
+          currentTranscriptions[transcriptionId].status = 'completed';
+          currentTranscriptions[transcriptionId].progress = 100;
+          currentTranscriptions[transcriptionId].result = result;
+          currentTranscriptions[transcriptionId].updated_at = new Date().toISOString();
+          saveJSON(transcriptionsFile, currentTranscriptions);
+          console.log('✅ Transcription result saved successfully');
+        } catch (saveError) {
+          console.error('❌ Error saving transcription result:', saveError.message);
+          // Don't crash the server - the transcription still succeeded
+        }
         
-        // Update transcription with error
-        const currentTranscriptions = loadJSON(transcriptionsFile);
-        currentTranscriptions[transcriptionId].status = 'error';
-        currentTranscriptions[transcriptionId].error = error.message;
-        currentTranscriptions[transcriptionId].updated_at = new Date().toISOString();
-        saveJSON(transcriptionsFile, currentTranscriptions);
-      });
+      } catch (error) {
+        console.error('❌ Transcription failed:', error);
+        console.error('❌ Error stack:', error.stack);
+        
+        // Update transcription with error - wrapped in try/catch
+        try {
+          const currentTranscriptions = loadJSON(transcriptionsFile);
+          currentTranscriptions[transcriptionId].status = 'error';
+          currentTranscriptions[transcriptionId].error = error.message || 'Unknown transcription error';
+          currentTranscriptions[transcriptionId].updated_at = new Date().toISOString();
+          saveJSON(transcriptionsFile, currentTranscriptions);
+          console.log('✅ Error status saved successfully');
+        } catch (saveError) {
+          console.error('❌ Error saving error status:', saveError.message);
+          // Last resort - log the transcription ID so we can manually check
+          console.error(`❌ CRITICAL: Unable to update status for transcription ${transcriptionId}`);
+        }
+      }
+    })();
 
     console.log('✅ Transcription request accepted - processing in background');
     res.json({ 

@@ -19,7 +19,11 @@
       "Bash(find:*)",
       "Bash(npm run start:local:*)",
       "Bash(.whisper-cli.exe:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(timeout:*)",
+      "Bash(dir:*)",
+      "Bash(wmic process where:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }
