@@ -26,7 +26,27 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-// Local whisper transcription function
+// Import Phase 3 agents
+const whisperChunkerAgent = require('./services/whisperChunkerAgent');
+const aeJSXExporterAgent = require('./services/aeJSXExporterAgent');
+
+// Helper function to get video duration
+async function getVideoDuration(videoPath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err) {
+        console.error('❌ Error getting video duration:', err);
+        reject(err);
+      } else {
+        const duration = metadata.format.duration;
+        console.log(`📊 Video duration detected: ${duration} seconds`);
+        resolve(duration);
+      }
+    });
+  });
+}
+
+// Local whisper transcription function with Phase 3 chunking support
 async function localWhisperTranscribe(videoPath, transcriptionId) {
   console.log('🎯 Starting LOCAL whisper transcription for ID:', transcriptionId);
   console.log('📂 Video path:', videoPath);
@@ -39,55 +59,155 @@ async function localWhisperTranscribe(videoPath, transcriptionId) {
     transcriptions[transcriptionId].status_message = '🎧 Starting whisper processing...';
     saveJSON(transcriptionsFile, transcriptions);
 
-    // Whisper setup
-    const whisperPath = path.join(__dirname, '../whisper-cpp/Release/whisper-cli.exe');
-    const modelsPath = path.join(__dirname, '../whisper-cpp/models/ggml-small.bin');
+    // Get video duration to determine processing strategy
+    console.log('📊 Analyzing video duration...');
+    const videoDuration = await getVideoDuration(videoPath);
+    console.log(`📊 Video duration: ${Math.floor(videoDuration/60)}:${Math.floor(videoDuration%60).toString().padStart(2,'0')} (${videoDuration}s)`);
     
-    console.log('🔍 Checking whisper executable:', whisperPath);
-    console.log('🔍 Checking model:', modelsPath);
+    // Phase 3: Use chunked processing for videos longer than 45 seconds
+    const CHUNKING_THRESHOLD = 45; // seconds
     
-    if (!require('fs').existsSync(whisperPath)) {
-      throw new Error(`Whisper executable not found at: ${whisperPath}`);
-    }
-    
-    if (!require('fs').existsSync(modelsPath)) {
-      throw new Error(`Whisper model not found at: ${modelsPath}`);
-    }
+    if (videoDuration > CHUNKING_THRESHOLD) {
+      console.log('🚀 Phase 3: Using chunked transcription for long-form video');
+      
+      // Update status message
+      const currentTranscriptions = loadJSON(transcriptionsFile);
+      currentTranscriptions[transcriptionId].status_message = '🎯 Phase 3: Chunked processing for long video...';
+      saveJSON(transcriptionsFile, currentTranscriptions);
+      
+      // Use WhisperChunkerAgent for long videos with comprehensive error handling
+      let result;
+      try {
+        console.log(`🔍 DEBUG: Calling WhisperChunkerAgent for ${videoDuration}s video`);
+        console.log(`🔍 DEBUG: Video path: ${videoPath}`);
+        console.log(`🔍 DEBUG: Expected chunks: ~${Math.ceil(videoDuration / 28)} chunks`);
+        
+        result = await whisperChunkerAgent.transcribeFullLength(
+          videoPath, 
+          'small', // Use small model for balance of speed/accuracy
+          (progress, message) => {
+            // Progress callback with detailed logging
+            console.log(`🔍 DEBUG: Progress update: ${progress}% - ${message}`);
+            const currentTranscriptions = loadJSON(transcriptionsFile);
+            currentTranscriptions[transcriptionId].progress = progress;
+            currentTranscriptions[transcriptionId].status_message = message;
+            saveJSON(transcriptionsFile, currentTranscriptions);
+          }
+        );
+        
+        // Validate result
+        console.log(`🔍 DEBUG: WhisperChunkerAgent completed`);
+        console.log(`🔍 DEBUG: Result segments: ${result?.segments?.length || 0}`);
+        console.log(`🔍 DEBUG: Result text length: ${result?.text?.length || 0} chars`);
+        console.log(`🔍 DEBUG: Result provider: ${result?.provider || 'unknown'}`);
+        
+        // Validation checks
+        if (!result) {
+          throw new Error('WhisperChunkerAgent returned null/undefined result');
+        }
+        
+        if (!result.segments || result.segments.length === 0) {
+          throw new Error('WhisperChunkerAgent returned no segments');
+        }
+        
+        if (result.text && result.text.length < 100) {
+          console.warn(`⚠️ WARNING: Very short transcription (${result.text.length} chars) for ${videoDuration}s video`);
+        }
+        
+        // Check if we got reasonable segment coverage
+        const lastSegment = result.segments[result.segments.length - 1];
+        const timelineCoverage = lastSegment ? lastSegment.end : 0;
+        const expectedCoverage = videoDuration * 0.8; // At least 80% coverage expected
+        
+        if (timelineCoverage < expectedCoverage) {
+          console.warn(`⚠️ WARNING: Timeline coverage is low - got ${timelineCoverage.toFixed(1)}s, expected ~${expectedCoverage.toFixed(1)}s`);
+        }
+        
+        console.log(`✅ Phase 3 validation passed - ${result.segments.length} segments covering ${timelineCoverage.toFixed(1)}s`);
+        
+      } catch (chunkerError) {
+        console.error('❌ WhisperChunkerAgent failed:', chunkerError);
+        console.error('❌ Error details:', {
+          message: chunkerError.message,
+          stack: chunkerError.stack,
+          videoPath: videoPath,
+          videoDuration: videoDuration
+        });
+        
+        // Update status with error details
+        const errorTranscriptions = loadJSON(transcriptionsFile);
+        errorTranscriptions[transcriptionId].status_message = `❌ Chunking failed: ${chunkerError.message}`;
+        saveJSON(transcriptionsFile, errorTranscriptions);
+        
+        throw new Error(`Phase 3 chunking failed: ${chunkerError.message}`);
+      }
+      
+      // Update with final result
+      const finalTranscriptions = loadJSON(transcriptionsFile);
+      finalTranscriptions[transcriptionId].status = 'completed';
+      finalTranscriptions[transcriptionId].progress = 100;
+      finalTranscriptions[transcriptionId].result = result;
+      finalTranscriptions[transcriptionId].status_message = '✅ Phase 3: Long-form transcription complete!';
+      saveJSON(transcriptionsFile, finalTranscriptions);
+      
+      console.log('✅ Phase 3 chunked transcription completed successfully!');
+      return result;
+      
+    } else {
+      console.log('🔄 Phase 2: Using standard processing for short video');
+      
+      // Whisper setup for short videos (Phase 2 compatibility)
+      const whisperPath = path.join(__dirname, '../whisper-cpp/Release/whisper-cli.exe');
+      const modelsPath = path.join(__dirname, '../whisper-cpp/models/ggml-small.bin');
+      
+      console.log('🔍 Checking whisper executable:', whisperPath);
+      console.log('🔍 Checking model:', modelsPath);
+      
+      if (!require('fs').existsSync(whisperPath)) {
+        throw new Error(`Whisper executable not found at: ${whisperPath}`);
+      }
+      
+      if (!require('fs').existsSync(modelsPath)) {
+        throw new Error(`Whisper model not found at: ${modelsPath}`);
+      }
 
-    // Update progress
-    transcriptions[transcriptionId].progress = 50;
-    transcriptions[transcriptionId].status_message = '🎯 Processing audio with whisper.cpp...';
-    saveJSON(transcriptionsFile, transcriptions);
+      // Update progress
+      const currentTranscriptions = loadJSON(transcriptionsFile);
+      currentTranscriptions[transcriptionId].progress = 50;
+      currentTranscriptions[transcriptionId].status_message = '🎯 Processing audio with whisper.cpp...';
+      saveJSON(transcriptionsFile, currentTranscriptions);
 
-    // Extract audio first, then run whisper
-    console.log('🎵 Extracting audio from video...');
-    const audioPath = await extractAudioFromVideo(videoPath);
-    
-    // Update progress
-    const currentTranscriptions = loadJSON(transcriptionsFile);
-    currentTranscriptions[transcriptionId].progress = 75;
-    currentTranscriptions[transcriptionId].status_message = '🎯 Running whisper on audio...';
-    saveJSON(transcriptionsFile, currentTranscriptions);
-    
-    // Run whisper on the extracted audio
-    const result = await runWhisperLocal(audioPath, whisperPath, modelsPath);
-    
-    // Clean up audio file
-    try {
-      require('fs').unlinkSync(audioPath);
-    } catch (e) {
-      // File might not exist
+      // Extract audio first, then run whisper
+      console.log('🎵 Extracting audio from video...');
+      const audioPath = await extractAudioFromVideo(videoPath);
+      
+      // Update progress
+      const progressTranscriptions = loadJSON(transcriptionsFile);
+      progressTranscriptions[transcriptionId].progress = 75;
+      progressTranscriptions[transcriptionId].status_message = '🎯 Running whisper on audio...';
+      saveJSON(transcriptionsFile, progressTranscriptions);
+      
+      // Run whisper on the extracted audio
+      const result = await runWhisperLocal(audioPath, whisperPath, modelsPath);
+      
+      // Clean up audio file
+      try {
+        require('fs').unlinkSync(audioPath);
+      } catch (e) {
+        // File might not exist
+      }
+      
+      // Update with final result
+      const finalTranscriptions = loadJSON(transcriptionsFile);
+      finalTranscriptions[transcriptionId].status = 'completed';
+      finalTranscriptions[transcriptionId].progress = 100;
+      finalTranscriptions[transcriptionId].result = result;
+      finalTranscriptions[transcriptionId].status_message = '✅ Transcription complete!';
+      saveJSON(transcriptionsFile, finalTranscriptions);
+      
+      console.log('✅ Local transcription completed successfully!');
+      return result;
     }
-    
-    // Update with final result
-    transcriptions[transcriptionId].status = 'completed';
-    transcriptions[transcriptionId].progress = 100;
-    transcriptions[transcriptionId].result = result;
-    transcriptions[transcriptionId].status_message = '✅ Transcription complete!';
-    saveJSON(transcriptionsFile, transcriptions);
-    
-    console.log('✅ Local transcription completed successfully!');
-    return result;
     
   } catch (error) {
     console.error('❌ Local transcription error:', error);
@@ -135,8 +255,8 @@ function runWhisperLocal(audioPath, whisperPath, modelPath) {
     const outputBase = audioPath.replace(path.extname(audioPath), '');
     const srtOutput = `${outputBase}.srt`;
     
-    // Use SRT format - fix command format and limit to first 30 seconds for testing
-    const command = `"${whisperPath}" -m "${modelPath}" --duration 30000 --output-srt --output-file "${outputBase}" --no-prints "${audioPath}"`;
+    // Use SRT format - removed duration limit for full-length processing
+    const command = `"${whisperPath}" -m "${modelPath}" --output-srt --output-file "${outputBase}" --no-prints "${audioPath}"`;
     
     console.log('🏠 Running LOCAL whisper:', command);
     
@@ -320,20 +440,37 @@ initLocalDB();
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
-    status: '✅ LOCAL Server is healthy',
+    status: '✅ LOCAL Server is healthy - Phase 3 Ready',
     timestamp: new Date().toISOString(),
     port: PORT,
     mode: 'LOCAL',
+    phase: '3',
     endpoints: {
       health: '/health',
       videos: '/api/videos',
-      export: '/api/export',
-      transcribe: '/api/transcribe'
+      transcribe: '/api/transcribe',
+      export_phase2: '/api/export/jsx/enhanced',
+      export_phase3_jsx: '/api/export/jsx/phase3',
+      export_phase3_srt: '/api/export/srt/phase3',
+      export_phase3_vtt: '/api/export/vtt/phase3',
+      export_phase3_json: '/api/export/json/phase3'
+    },
+    features: {
+      chunked_transcription: true,
+      long_form_videos: '3-5+ minutes',
+      after_effects_jsx: true,
+      ecma2018_syntax: true,
+      fade_animations: true,
+      multiple_styles: ['modern', 'minimal', 'bold', 'podcast', 'cinematic'],
+      multiple_positions: ['bottom', 'top', 'center', 'corners'],
+      export_formats: ['jsx', 'srt', 'vtt', 'json']
     },
     environment: {
       node_version: process.version,
       local_mode: true,
-      whisper_available: true
+      whisper_available: true,
+      whisper_chunker_agent: true,
+      ae_jsx_exporter_agent: true
     }
   });
 });
@@ -756,6 +893,291 @@ function hexToRgb(hex) {
   const b = parseInt(hex.slice(5, 7), 16) / 255;
   return [r.toFixed(3), g.toFixed(3), b.toFixed(3)];
 }
+
+// Phase 3: Enhanced JSX Export endpoint with AEJSXExporterAgent
+app.get('/api/export/jsx/phase3', (req, res) => {
+  try {
+    const { 
+      id, 
+      style = 'modern', 
+      position = 'bottom',
+      enableFades = 'true',
+      enableStroke = 'true', 
+      enableShadow = 'true',
+      exportMode = 'inline'
+    } = req.query;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Transcription ID is required'
+      });
+    }
+
+    console.log('📤 Phase 3 JSX Export request:', { 
+      id, style, position, enableFades, enableStroke, enableShadow, exportMode 
+    });
+    
+    // Get transcription data
+    const transcriptions = loadJSON(transcriptionsFile);
+    const transcription = transcriptions[id];
+
+    if (!transcription) {
+      return res.status(404).json({
+        success: false,
+        error: 'Transcription not found'
+      });
+    }
+
+    if (transcription.status !== 'completed') {
+      return res.status(400).json({
+        success: false,
+        error: 'Transcription not completed yet'
+      });
+    }
+
+    if (!transcription.result || !transcription.result.segments) {
+      return res.status(400).json({
+        success: false,
+        error: 'No segments found in transcription result'
+      });
+    }
+
+    // Validate segments with AEJSXExporterAgent
+    try {
+      aeJSXExporterAgent.validateSegments(transcription.result.segments);
+    } catch (validationError) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid segment data: ${validationError.message}`
+      });
+    }
+
+    // Generate JSX content using AEJSXExporterAgent
+    const exportOptions = {
+      style: style,
+      position: position,
+      enableFades: enableFades === 'true',
+      enableStroke: enableStroke === 'true',
+      enableShadow: enableShadow === 'true',
+      centerAlign: true,
+      exportMode: exportMode,
+      filename: `captions_${id}.json`
+    };
+
+    const jsxContent = aeJSXExporterAgent.generateMainLoader(
+      transcription.result.segments, 
+      exportOptions
+    );
+    
+    console.log('✅ Phase 3 JSX content generated successfully');
+    console.log(`📊 Exported ${transcription.result.segments.length} segments`);
+    
+    // Set response headers for JSX download
+    res.set({
+      'Content-Type': 'application/javascript',
+      'Content-Disposition': `attachment; filename="main_loader_${style}_${Date.now()}.jsx"`
+    });
+    
+    res.send(jsxContent);
+
+  } catch (error) {
+    console.error('❌ Phase 3 JSX export error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to export Phase 3 JSX'
+    });
+  }
+});
+
+// Phase 3: SRT Export endpoint
+app.get('/api/export/srt/phase3', (req, res) => {
+  try {
+    const { id } = req.query;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Transcription ID is required'
+      });
+    }
+
+    console.log('📤 Phase 3 SRT Export request:', { id });
+    
+    // Get transcription data
+    const transcriptions = loadJSON(transcriptionsFile);
+    const transcription = transcriptions[id];
+
+    if (!transcription) {
+      return res.status(404).json({
+        success: false,
+        error: 'Transcription not found'
+      });
+    }
+
+    if (transcription.status !== 'completed') {
+      return res.status(400).json({
+        success: false,
+        error: 'Transcription not completed yet'
+      });
+    }
+
+    if (!transcription.result || !transcription.result.segments) {
+      return res.status(400).json({
+        success: false,
+        error: 'No segments found in transcription result'
+      });
+    }
+
+    // Generate SRT content using AEJSXExporterAgent
+    const srtContent = aeJSXExporterAgent.generateSRT(transcription.result.segments);
+    
+    console.log('✅ Phase 3 SRT content generated successfully');
+    console.log(`📊 Exported ${transcription.result.segments.length} segments`);
+    
+    // Set response headers for SRT download
+    res.set({
+      'Content-Type': 'application/x-subrip',
+      'Content-Disposition': `attachment; filename="captions_${id}_${Date.now()}.srt"`
+    });
+    
+    res.send(srtContent);
+
+  } catch (error) {
+    console.error('❌ Phase 3 SRT export error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to export Phase 3 SRT'
+    });
+  }
+});
+
+// Phase 3: VTT Export endpoint
+app.get('/api/export/vtt/phase3', (req, res) => {
+  try {
+    const { id } = req.query;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Transcription ID is required'
+      });
+    }
+
+    console.log('📤 Phase 3 VTT Export request:', { id });
+    
+    // Get transcription data
+    const transcriptions = loadJSON(transcriptionsFile);
+    const transcription = transcriptions[id];
+
+    if (!transcription) {
+      return res.status(404).json({
+        success: false,
+        error: 'Transcription not found'
+      });
+    }
+
+    if (transcription.status !== 'completed') {
+      return res.status(400).json({
+        success: false,
+        error: 'Transcription not completed yet'
+      });
+    }
+
+    if (!transcription.result || !transcription.result.segments) {
+      return res.status(400).json({
+        success: false,
+        error: 'No segments found in transcription result'
+      });
+    }
+
+    // Generate VTT content using AEJSXExporterAgent
+    const vttContent = aeJSXExporterAgent.generateVTT(transcription.result.segments);
+    
+    console.log('✅ Phase 3 VTT content generated successfully');
+    console.log(`📊 Exported ${transcription.result.segments.length} segments`);
+    
+    // Set response headers for VTT download
+    res.set({
+      'Content-Type': 'text/vtt',
+      'Content-Disposition': `attachment; filename="captions_${id}_${Date.now()}.vtt"`
+    });
+    
+    res.send(vttContent);
+
+  } catch (error) {
+    console.error('❌ Phase 3 VTT export error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to export Phase 3 VTT'
+    });
+  }
+});
+
+// Phase 3: JSON Export endpoint (for external JSX import)
+app.get('/api/export/json/phase3', (req, res) => {
+  try {
+    const { id } = req.query;
+    
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Transcription ID is required'
+      });
+    }
+
+    console.log('📤 Phase 3 JSON Export request:', { id });
+    
+    // Get transcription data
+    const transcriptions = loadJSON(transcriptionsFile);
+    const transcription = transcriptions[id];
+
+    if (!transcription) {
+      return res.status(404).json({
+        success: false,
+        error: 'Transcription not found'
+      });
+    }
+
+    if (transcription.status !== 'completed') {
+      return res.status(400).json({
+        success: false,
+        error: 'Transcription not completed yet'
+      });
+    }
+
+    if (!transcription.result || !transcription.result.segments) {
+      return res.status(400).json({
+        success: false,
+        error: 'No segments found in transcription result'
+      });
+    }
+
+    // Generate JSON file using AEJSXExporterAgent
+    const jsonFile = aeJSXExporterAgent.generateSegmentJSON(
+      transcription.result.segments, 
+      `captions_${id}.json`
+    );
+    
+    console.log('✅ Phase 3 JSON content generated successfully');
+    console.log(`📊 Exported ${transcription.result.segments.length} segments`);
+    
+    // Set response headers for JSON download
+    res.set({
+      'Content-Type': 'application/json',
+      'Content-Disposition': `attachment; filename="${jsonFile.filename}"`
+    });
+    
+    res.send(jsonFile.content);
+
+  } catch (error) {
+    console.error('❌ Phase 3 JSON export error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to export Phase 3 JSON'
+    });
+  }
+});
 
 // Error handlers
 app.use((err, req, res, next) => {
