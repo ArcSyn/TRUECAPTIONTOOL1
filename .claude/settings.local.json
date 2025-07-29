@@ -23,7 +23,12 @@
       "Bash(timeout:*)",
       "Bash(dir:*)",
       "Bash(wmic process where:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(npm run health:*)",
+      "Bash(npm run client:*)",
+      "Bash(npm install:*)",
+      "Bash(start /B node:*)",
+      "Bash(cmd /c:*)"
     ],
     "deny": []
   }

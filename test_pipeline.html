@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CapEdify Pipeline Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        textarea { width: 100%; height: 150px; margin: 10px 0; }
+        #progress { margin: 10px 0; }
+        .progress-bar { background: #f0f0f0; height: 20px; border-radius: 10px; overflow: hidden; }
+        .progress-fill { background: #007bff; height: 100%; transition: width 0.3s; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 CapEdify Agent Pipeline Test</h1>
+        
+        <div class="status info">
+            <strong>Test Status:</strong> Ready to test pipeline
+        </div>
+        
+        <h3>Test SRT Content:</h3>
+        <textarea id="srtContent">1
+00:00:01,000 --> 00:00:03,500
+Hello everyone, welcome to our video.
+
+2
+00:00:03,500 --> 00:00:06,000
+Today we're going to talk about AI.
+
+3
+00:00:06,000 --> 00:00:08,500
+It's a fascinating subject that affects us all.
+
+4
+00:00:10,000 --> 00:00:13,000
+Let's start with the basics. What is AI?</textarea>
+
+        <button onclick="testPipeline()">🔥 Test Agent Pipeline</button>
+        <button onclick="checkServerHealth()">💓 Check Server Health</button>
+        
+        <div id="progress" style="display: none;">
+            <h4>Pipeline Progress:</h4>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            </div>
+            <div id="progressText">Starting...</div>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+
+    <script>
+        let currentJobId = null;
+        let pollInterval = null;
+
+        function addStatus(message, type = 'info') {
+            const results = document.getElementById('results');
+            const status = document.createElement('div');
+            status.className = `status ${type}`;
+            status.innerHTML = `<strong>${new Date().toLocaleTimeString()}:</strong> ${message}`;
+            results.appendChild(status);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        async function checkServerHealth() {
+            try {
+                addStatus('Checking server health...', 'info');
+                const response = await fetch('http://localhost:4000/health');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    addStatus(`✅ Server healthy: ${data.status}`, 'success');
+                    addStatus(`🎯 Pipeline endpoint available: ${data.endpoints.pipeline}`, 'success');
+                } else {
+                    addStatus(`❌ Server error: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                addStatus(`❌ Connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testPipeline() {
+            const srtContent = document.getElementById('srtContent').value;
+            
+            if (!srtContent.trim()) {
+                addStatus('❌ Please enter SRT content', 'error');
+                return;
+            }
+
+            try {
+                addStatus('🚀 Starting agent pipeline...', 'info');
+                document.getElementById('progress').style.display = 'block';
+                
+                const requestBody = {
+                    inputType: 'srt',
+                    srtContent: srtContent,
+                    userTier: 'creator',
+                    jobCountThisMonth: 5,
+                    durationMinutes: 0.5,
+                    style: 'modern',
+                    position: 'bottom',
+                    projectName: 'CapEdify_Test_Export'
+                };
+
+                const response = await fetch('http://localhost:4000/api/pipeline/run', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentJobId = result.jobId;
+                    addStatus(`✅ Pipeline started! Job ID: ${currentJobId}`, 'success');
+                    addStatus(`📊 Estimated duration: ${result.estimatedDuration}`, 'info');
+                    
+                    // Start polling for progress
+                    startProgressPolling();
+                } else {
+                    addStatus(`❌ Pipeline failed to start: ${result.error}`, 'error');
+                }
+
+            } catch (error) {
+                addStatus(`❌ Pipeline request failed: ${error.message}`, 'error');
+                document.getElementById('progress').style.display = 'none';
+            }
+        }
+
+        function startProgressPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            
+            pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`http://localhost:4000/api/pipeline/status/${currentJobId}`);
+                    
+                    if (response.ok) {
+                        const status = await response.json();
+                        updateProgress(status.progress, status.progressMessage);
+                        
+                        if (status.status === 'completed') {
+                            clearInterval(pollInterval);
+                            addStatus('🎉 Pipeline completed successfully!', 'success');
+                            addStatus(`📄 Scenes generated: ${status.result?.sceneCount || 'Unknown'}`, 'success');
+                            addStatus(`💰 Credits used: ${status.result?.creditInfo?.estimatedCreditsUsed || 'Unknown'}`, 'info');
+                            
+                            // Add download button
+                            const downloadBtn = document.createElement('button');
+                            downloadBtn.textContent = '📥 Download JSX File';
+                            downloadBtn.onclick = () => downloadJSX(currentJobId);
+                            document.getElementById('results').appendChild(downloadBtn);
+                            
+                        } else if (status.status === 'failed') {
+                            clearInterval(pollInterval);
+                            addStatus(`❌ Pipeline failed: ${status.error?.message || 'Unknown error'}`, 'error');
+                            if (status.error?.agent) {
+                                addStatus(`🔧 Failed agent: ${status.error.agent}`, 'error');
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Polling error:', error);
+                }
+            }, 2000);
+        }
+
+        function updateProgress(percent, message) {
+            document.getElementById('progressFill').style.width = `${percent}%`;
+            document.getElementById('progressText').textContent = `${Math.round(percent)}% - ${message}`;
+        }
+
+        function downloadJSX(jobId) {
+            const link = document.createElement('a');
+            link.href = `http://localhost:4000/api/pipeline/download/${jobId}`;
+            link.download = `CapEdify_${jobId}.jsx`;
+            link.click();
+            addStatus('📥 Download started!', 'success');
+        }
+
+        // Check server health on page load
+        window.onload = () => {
+            checkServerHealth();
+        };
+    </script>
+</body>
+</html>

@@ -1,442 +1,375 @@
 import React, { useState } from 'react';
-import './styles/theme.css';
+import './App.css';
+import { TranscriptionProgress } from './components/TranscriptionProgress';
+import { VideoUpload } from './components/VideoUpload';
+import { CaptionEditor } from './components/CaptionEditor';
+import { ExportOptions } from './components/ExportOptions';
 
-interface TranscriptionResult {
-  text: string;
-  segments: any[];
-  language: string;
+// Simple types for now
+interface VideoFile {
+  file: File;
+  url: string;
+  duration: number;
+  size: number;
+  name: string;
+  id?: string;
+  transcriptionId?: string;
+  transcriptionStatus?: string;
 }
 
+interface Caption {
+  id: string;
+  startTime: number;
+  endTime: number;
+  text: string;
+}
+
+// Magical themed step configuration
+const MAGICAL_STEPS = [
+  { 
+    id: 'upload', 
+    label: 'Summon Media', 
+    icon: '🔮', 
+    description: 'Upload your mystical video file',
+    magicalText: 'The crystal ball awaits your video...'
+  },
+  { 
+    id: 'transcribe', 
+    label: 'Divine Words', 
+    icon: '✨', 
+    description: 'AI spirits transcribe your audio',
+    magicalText: 'Ancient spirits are listening to your words...'
+  },
+  { 
+    id: 'edit', 
+    label: 'Enchant Text', 
+    icon: '📜', 
+    description: 'Edit and perfect your captions',
+    magicalText: 'Weave your words with magical precision...'
+  },
+  { 
+    id: 'export', 
+    label: 'Cast Spells', 
+    icon: '🪄', 
+    description: 'Export in multiple magical formats',
+    magicalText: 'Transform your work into powerful spells...'
+  }
+];
+
+type StepType = 'upload' | 'transcribe' | 'edit' | 'export';
+
 function App() {
-  const [currentStep, setCurrentStep] = useState<'upload' | 'transcribe' | 'edit' | 'export'>('upload');
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [transcriptionId, setTranscriptionId] = useState<string | null>(null);
-  const [status, setStatus] = useState<string>('');
-  const [progress, setProgress] = useState<number>(0);
-  const [transcriptionResult, setTranscriptionResult] = useState<TranscriptionResult | null>(null);
-  const [editedText, setEditedText] = useState<string>('');
+  const [currentStep, setCurrentStep] = useState<StepType>('upload');
+  const [completedSteps, setCompletedSteps] = useState<string[]>([]);
+  const [uploadedVideo, setUploadedVideo] = useState<VideoFile | null>(null);
+  const [transcriptionId, setTranscriptionId] = useState<string>('');
+  const [captions, setCaptions] = useState<Caption[]>([]);
+  const [projectName, setProjectName] = useState<string>('');
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      setFile(selectedFile);
-    }
-  };
-
-  const uploadAndTranscribe = async () => {
-    if (!file) return;
-
-    setUploading(true);
+  const handleVideoUploaded = (video: VideoFile) => {
+    setUploadedVideo(video);
+    setProjectName(video.name.replace(/\.[^/.]+$/, '')); // Remove extension
+    
+    // Mark upload as complete and move to transcription
+    setCompletedSteps(['upload']);
     setCurrentStep('transcribe');
-    setStatus('Uploading video...');
-
-    try {
-      // Upload video
-      const formData = new FormData();
-      formData.append('video', file);
-
-      const uploadResponse = await fetch('http://localhost:4000/api/videos/upload', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error('Upload failed');
-      }
-
-      const uploadResult = await uploadResponse.json();
-      setStatus('Starting transcription...');
-
-      // Start transcription
-      const transcribeResponse = await fetch('http://localhost:4000/api/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId: uploadResult.video.id,
-          transcriptionId: uploadResult.transcription.id,
-          model: 'whisper-large-v3'
-        })
-      });
-
-      if (!transcribeResponse.ok) {
-        throw new Error('Transcription failed to start');
-      }
-
-      setTranscriptionId(uploadResult.transcription.id);
-      setStatus('Transcription in progress...');
-      pollTranscription(uploadResult.transcription.id);
-
-    } catch (error) {
-      console.error('Error:', error);
-      setStatus(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setUploading(false);
-    }
   };
 
-  const pollTranscription = async (id: string) => {
-    try {
-      const response = await fetch(`http://localhost:4000/api/transcribe/${id}`);
-      const result = await response.json();
-
-      if (result.success) {
-        const transcription = result.transcription;
-        
-        // Update progress and status
-        setProgress(transcription.progress || 0);
-        
-        // Show fun message if available, otherwise show technical status
-        if (transcription.status_message) {
-          setStatus(transcription.status_message);
-        } else {
-          setStatus(`Status: ${transcription.status}`);
-        }
-
-        if (transcription.status === 'completed') {
-          setStatus('🏆 VICTORY! All audio invaders defeated!');
-          setProgress(100);
-          setUploading(false);
-          setTranscriptionResult(transcription.result);
-          setEditedText(transcription.result.text);
-          setCurrentStep('edit');
-        } else if (transcription.status === 'error') {
-          setStatus(`💥 GAME OVER: ${transcription.error}`);
-          setProgress(0);
-          setUploading(false);
-        } else {
-          // Keep polling
-          setTimeout(() => pollTranscription(id), 2000);
-        }
-      }
-    } catch (error) {
-      console.error('Polling error:', error);
-      setStatus('❌ Failed to check transcription status');
-      setUploading(false);
-    }
-  };
-
-  const exportSRT = () => {
-    if (!transcriptionResult) return;
+  const handleTranscriptionComplete = (id: string) => {
+    setTranscriptionId(id);
     
-    // Simple SRT export (could be enhanced with proper timing)
-    const srtContent = `1\n00:00:00,000 --> 00:00:10,000\n${editedText}\n\n`;
-    const blob = new Blob([srtContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${file?.name || 'transcription'}.srt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // Mark transcription as complete and move to editing
+    setCompletedSteps(['upload', 'transcribe']);
+    setCurrentStep('edit');
   };
 
-  const exportVTT = () => {
-    if (!transcriptionResult) return;
+  const handleCaptionsReady = (newCaptions: Caption[]) => {
+    setCaptions(newCaptions);
     
-    // Simple VTT export
-    const vttContent = `WEBVTT\n\n1\n00:00:00.000 --> 00:00:10.000\n${editedText}\n\n`;
-    const blob = new Blob([vttContent], { type: 'text/vtt' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${file?.name || 'transcription'}.vtt`;
-    a.click();
-    URL.revokeObjectURL(url);
+    // Mark editing as complete and move to export
+    setCompletedSteps(['upload', 'transcribe', 'edit']);
+    setCurrentStep('export');
   };
 
-  const exportTXT = () => {
-    if (!editedText) return;
-    
-    const blob = new Blob([editedText], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${file?.name || 'transcription'}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const exportJSX = async (style: string = 'modern') => {
-    if (!transcriptionId) return;
-    
-    try {
-      const response = await fetch(`http://localhost:4000/api/export/jsx/enhanced?id=${transcriptionId}&style=${style}&scene_detection=false`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to export JSX');
-      }
-      
-      const jsxContent = await response.text();
-      const blob = new Blob([jsxContent], { type: 'application/javascript' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `captions_${style}_${Date.now()}.jsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('JSX export error:', error);
-      alert('Failed to export JSX file');
-    }
-  };
+  const getCurrentStepInfo = () => MAGICAL_STEPS.find(step => step.id === currentStep);
+  const stepInfo = getCurrentStepInfo();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-green-900">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-blue-900 relative overflow-hidden">
+      
+      {/* Magical Background Elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {/* Floating magical particles */}
+        <div className="absolute top-10 left-10 w-2 h-2 bg-yellow-300 rounded-full opacity-70 animate-pulse"></div>
+        <div className="absolute top-32 right-20 w-1 h-1 bg-pink-300 rounded-full opacity-80 animate-bounce"></div>
+        <div className="absolute bottom-20 left-1/4 w-3 h-3 bg-cyan-300 rounded-full opacity-60" style={{animation: 'float 6s ease-in-out infinite'}}></div>
+        <div className="absolute top-1/3 right-1/3 w-1 h-1 bg-green-300 rounded-full opacity-90 animate-ping"></div>
+        <div className="absolute bottom-1/3 right-10 w-2 h-2 bg-purple-300 rounded-full opacity-50" style={{animation: 'float 4s ease-in-out infinite reverse'}}></div>
+        
+        {/* Mystical aurora effect */}
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/10 to-transparent animate-pulse"></div>
+      </div>
+
       {/* Header */}
-      <header className="bg-black shadow-lg border-b-2 border-green-500">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-green-400 font-mono tracking-wider">👾 CAPEDIFY</h1>
-              <p className="text-sm text-green-300 font-mono">RETRO CAPTION ARCADE</p>
-            </div>
+      <header className="relative z-10 bg-black/30 backdrop-blur-md border-b border-purple-500/30 shadow-2xl">
+        <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="text-center">
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent mb-3">
+              🔮 CapEdify Enchanted
+            </h1>
+            <p className="text-purple-200 text-lg font-medium mb-2">
+              ✨ Mystical AI Caption Sorcery ✨
+            </p>
+            <p className="text-purple-300 text-sm">
+              Transform your videos with magical AI transcription and enchanted exports
+            </p>
             
-            {/* Step Indicator */}
-            <div className="hidden md:flex space-x-8">
-              {[
-                { key: 'upload', label: 'LOAD', icon: '🚀' },
-                { key: 'transcribe', label: 'BATTLE', icon: '👾' },
-                { key: 'edit', label: 'UPGRADE', icon: '⚡' },
-                { key: 'export', label: 'VICTORY', icon: '🏆' }
-              ].map((step) => (
-                <div key={step.key} className={`flex items-center space-x-2 font-mono ${
-                  currentStep === step.key ? 'text-green-400 font-bold animate-pulse' : 
-                  ['upload', 'transcribe', 'edit'].indexOf(currentStep) > ['upload', 'transcribe', 'edit'].indexOf(step.key) ? 'text-green-600' : 'text-gray-500'
-                }`}>
-                  <span className="text-lg animate-bounce">{step.icon}</span>
-                  <span className="text-sm tracking-wider">{step.label}</span>
+            {/* Current step indicator */}
+            {stepInfo && (
+              <div className="mt-4 px-6 py-3 bg-purple-900/50 backdrop-blur-sm rounded-full inline-flex items-center space-x-3 border border-purple-500/30">
+                <span className="text-2xl animate-pulse">{stepInfo.icon}</span>
+                <div className="text-left">
+                  <div className="text-purple-200 font-semibold text-sm">{stepInfo.label}</div>
+                  <div className="text-purple-400 text-xs">{stepInfo.magicalText}</div>
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-6">
-        {/* Upload Step */}
-        {currentStep === 'upload' && (
-          <div className="bg-gradient-to-b from-gray-900 to-black rounded-xl shadow-2xl p-8 border-2 border-green-500 text-white">
-            <div className="text-center">
-              <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse border-4 border-green-400">
-                <span className="text-3xl">🚀</span>
-              </div>
-              <h2 className="text-2xl font-bold text-green-400 mb-2 font-mono tracking-wider">MISSION BRIEFING</h2>
-              <p className="text-green-300 mb-6 font-mono">Select video file to initiate caption invasion protocol</p>
-              
-              <div className="border-2 border-dashed border-green-500 rounded-lg p-8 hover:border-green-400 transition-all bg-black/50">
-                <div className="mb-4 text-green-400 font-mono text-sm">
-                  ▲ ▲ ▲ UPLOAD ZONE ▲ ▲ ▲
-                </div>
-                <input 
-                  type="file" 
-                  accept="video/*" 
-                  className="block mx-auto mb-4 text-green-300 file:bg-green-600 file:text-black file:border-0 file:rounded file:px-4 file:py-2 file:font-mono file:font-bold hover:file:bg-green-500"
-                  onChange={handleFileSelect}
-                  disabled={uploading}
-                />
-                
-                {file && (
-                  <div className="mt-6 p-4 bg-green-900/50 rounded-lg border border-green-600">
-                    <p className="text-sm text-green-300 mb-2 font-mono">🎯 TARGET: {file.name}</p>
-                    <p className="text-xs text-green-400 mb-4 font-mono">SIZE: {(file.size / (1024*1024)).toFixed(1)} MB</p>
-                    <button 
-                      onClick={uploadAndTranscribe}
-                      disabled={uploading}
-                      className="w-full py-3 px-6 bg-green-600 text-black font-bold rounded-lg hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed transition-all font-mono tracking-wider border-2 border-green-400"
-                    >
-                      {uploading ? '🚀 LAUNCHING MISSION...' : '👾 START INVASION'}
-                    </button>
-                  </div>
-                )}
-                
-                {/* ASCII decoration */}
-                <div className="mt-4 text-green-500 text-xs font-mono">
-                  ████████████████████████████
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+      {/* Step Indicator */}
+      <div className="relative z-10 max-w-4xl mx-auto pt-8 px-4">
+        <div className="flex justify-center items-center space-x-8 mb-8">
+          {MAGICAL_STEPS.map((step, index) => {
+            const isCompleted = completedSteps.includes(step.id);
+            const isCurrent = currentStep === step.id;
+            const isUpcoming = !isCompleted && !isCurrent;
 
-        {/* Transcribe Step */}
-        {currentStep === 'transcribe' && (
-          <div className="bg-gradient-to-b from-gray-900 to-black rounded-xl shadow-lg p-8 text-white">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                <span className="text-2xl">👾</span>
-              </div>
-              <h2 className="text-xl font-semibold text-green-400 mb-2">🚀 CAPTION INVASION INITIATED</h2>
-              <p className="text-green-300 mb-6">AI forces are converting your audio to text...</p>
-              
-              <div className="bg-black rounded-lg p-6 border-2 border-green-500">
-                {/* Space Invaders Style Progress Bar */}
-                <div className="relative w-full h-8 bg-gray-800 rounded-full mb-4 overflow-hidden border border-green-400">
-                  <div 
-                    className="absolute left-0 top-0 h-full bg-gradient-to-r from-green-600 via-green-400 to-yellow-400 transition-all duration-500 ease-out"
-                    style={{ width: `${progress}%` }}
+            return (
+              <React.Fragment key={step.id}>
+                <div className="flex flex-col items-center space-y-3">
+                  <div
+                    className={`
+                      flex justify-center items-center rounded-full w-16 h-16 text-2xl
+                      transition-all duration-500 relative
+                      ${isCompleted ? 'bg-gradient-to-br from-green-400 to-emerald-500 shadow-lg shadow-green-500/50 scale-110' : ''}
+                      ${isCurrent ? 'bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg shadow-purple-500/50 scale-110 animate-pulse' : ''}
+                      ${isUpcoming ? 'bg-gray-700/50 backdrop-blur-sm border border-gray-600' : ''}
+                    `}
                   >
-                    {/* Animated scanning effect */}
-                    <div className="absolute right-0 top-0 w-4 h-full bg-white opacity-50 animate-pulse"></div>
+                    {isCompleted ? '✅' : step.icon}
+                    
+                    {/* Magical sparkles for current step */}
+                    {isCurrent && (
+                      <>
+                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full animate-ping"></div>
+                        <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-cyan-400 rounded-full animate-bounce"></div>
+                      </>
+                    )}
                   </div>
                   
-                  {/* Space Invaders characters moving across */}
-                  <div className="absolute top-1 left-2 text-xs animate-bounce">👾</div>
-                  <div className="absolute top-1 right-12 text-xs animate-pulse">🛸</div>
-                </div>
-                
-                {/* Retro-style status text */}
-                <div className="font-mono text-center">
-                  <p className="text-green-400 text-sm font-bold tracking-wider animate-pulse">{status || 'PREPARING BATTLE STATIONS...'}</p>
-                  <div className="mt-2 text-xs text-green-300">
-                    <span className="animate-pulse">▼ ▼ ▼ PROGRESS: {progress}% ▼ ▼ ▼</span>
+                  <div className="text-center">
+                    <span
+                      className={`
+                        font-semibold text-sm transition-colors duration-300
+                        ${isCompleted ? 'text-green-400' : ''}
+                        ${isCurrent ? 'text-purple-300' : ''}
+                        ${isUpcoming ? 'text-gray-400' : ''}
+                      `}
+                    >
+                      {step.label}
+                    </span>
+                    <div className={`text-xs mt-1 ${isCurrent ? 'text-purple-400' : 'text-gray-500'}`}>
+                      {step.description}
+                    </div>
                   </div>
                 </div>
                 
-                {/* ASCII-style border */}
-                <div className="mt-4 text-green-500 text-xs font-mono text-center">
-                  ████████████████████████████
+                {/* Connection line */}
+                {index < MAGICAL_STEPS.length - 1 && (
+                  <div
+                    className={`
+                      w-20 h-1 rounded-full transition-all duration-500
+                      ${completedSteps.includes(MAGICAL_STEPS[index + 1].id) 
+                        ? 'bg-gradient-to-r from-green-400 to-emerald-500 shadow-sm shadow-green-500/30' 
+                        : 'bg-gray-600/30'
+                      }
+                    `}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <main className="relative z-10 max-w-5xl mx-auto p-6">
+        <div className="bg-black/20 backdrop-blur-xl rounded-3xl border border-purple-500/20 shadow-2xl overflow-hidden">
+          
+          {/* Step Content */}
+          <div className="p-8">
+            {currentStep === 'upload' && (
+              <div className="space-y-6">
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-bold text-purple-200 mb-3">🔮 Summon Your Media</h2>
+                  <p className="text-purple-300">Upload your video file to begin the magical transcription process</p>
+                </div>
+                
+                <div className="magical-upload-wrapper">
+                  <VideoUpload onVideoUploaded={handleVideoUploaded} />
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* Edit Step */}
-        {currentStep === 'edit' && transcriptionResult && (
-          <div className="bg-gradient-to-b from-gray-900 to-black rounded-xl shadow-2xl p-8 border-2 border-green-500 text-white">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-green-400 font-mono tracking-wider">⚡ UPGRADE STATION</h2>
-                <p className="text-green-300 font-mono">Fine-tune your captured text before final deployment</p>
+            {currentStep === 'transcribe' && uploadedVideo && (
+              <div className="space-y-6">
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-bold text-purple-200 mb-3">✨ Divine the Words</h2>
+                  <p className="text-purple-300">Our AI spirits are listening to your video and transcribing every word</p>
+                </div>
+                
+                <div className="magical-transcription-wrapper">
+                  <TranscriptionProgress 
+                    videoId={uploadedVideo.id || 'temp-id'} 
+                    onTranscriptionComplete={handleTranscriptionComplete}
+                  />
+                </div>
               </div>
-              <button 
-                onClick={() => setCurrentStep('export')}
-                className="px-6 py-3 bg-green-600 text-black font-bold rounded-lg hover:bg-green-500 transition-all font-mono tracking-wider border-2 border-green-400 animate-pulse"
-              >
-                🏆 DEPLOY →
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-green-400 mb-2 font-mono tracking-wider">
-                  👾 CAPTURED TEXT DATA
-                </label>
-                <textarea
-                  value={editedText}
-                  onChange={(e) => setEditedText(e.target.value)}
-                  className="w-full h-64 p-4 bg-black border-2 border-green-600 rounded-lg focus:border-green-400 text-green-300 font-mono resize-none"
-                  placeholder="Your decoded audio transmissions will appear here..."
-                />
-              </div>
-              
-              <div className="flex justify-between items-center text-sm text-green-400 font-mono">
-                <span>📊 CHARS: {editedText.length}</span>
-                <span>📈 WORDS: {editedText.split(/\s+/).filter(w => w.length > 0).length}</span>
-              </div>
-              
-              {/* ASCII decoration */}
-              <div className="text-green-500 text-xs font-mono text-center">
-                ▼ ▼ ▼ TEXT PROCESSING COMPLETE ▼ ▼ ▼
-              </div>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* Export Step */}
-        {currentStep === 'export' && (
-          <div className="bg-gradient-to-b from-gray-900 to-black rounded-xl shadow-2xl p-8 border-2 border-green-500 text-white">
-            <div className="text-center mb-8">
-              <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce border-4 border-green-400">
-                <span className="text-3xl">🏆</span>
-              </div>
-              <h2 className="text-2xl font-bold text-green-400 mb-2 font-mono tracking-wider">🎉 MISSION ACCOMPLISHED</h2>
-              <p className="text-green-300 font-mono">Select your victory format and claim your prize</p>
-            </div>
-            
-            <div className="grid md:grid-cols-3 gap-6">
-              {/* After Effects JSX - Featured */}
-              <div className="border-2 border-green-400 rounded-lg p-6 hover:shadow-2xl transition-all bg-green-900/50 hover:bg-green-800/50">
-                <h3 className="text-lg font-bold text-green-400 mb-2 font-mono">🎭 AFTER EFFECTS (.jsx)</h3>
-                <p className="text-green-300 text-sm mb-4 font-mono">Pro-grade caption scripts for Adobe AE</p>
-                <div className="space-y-2">
-                  <button 
-                    onClick={() => exportJSX('modern')}
-                    className="w-full py-2 px-4 bg-green-600 text-black font-bold rounded-lg hover:bg-green-500 transition-all text-sm font-mono border border-green-400"
+            {currentStep === 'edit' && transcriptionId && (
+              <div className="space-y-6">
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-bold text-purple-200 mb-3">📜 Enchant Your Text</h2>
+                  <p className="text-purple-300">Perfect your captions with magical editing tools</p>
+                </div>
+                
+                <div className="magical-editor-wrapper">
+                  <CaptionEditor 
+                    captions={captions}
+                    onCaptionsChange={setCaptions}
+                    projectId={transcriptionId}
+                  />
+                </div>
+                
+                <div className="text-center pt-4">
+                  <button
+                    onClick={() => handleCaptionsReady(captions)}
+                    className="px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 
+                             text-white font-bold rounded-xl shadow-lg hover:shadow-purple-500/25 
+                             transform hover:scale-105 transition-all duration-300"
                   >
-                    🎯 MODERN STYLE
-                  </button>
-                  <button 
-                    onClick={() => exportJSX('minimal')}
-                    className="w-full py-2 px-4 bg-gray-700 text-green-400 font-bold rounded-lg hover:bg-gray-600 transition-all text-sm font-mono border border-gray-500"
-                  >
-                    ⚡ MINIMAL STYLE
-                  </button>
-                  <button 
-                    onClick={() => exportJSX('bold')}
-                    className="w-full py-2 px-4 bg-yellow-600 text-black font-bold rounded-lg hover:bg-yellow-500 transition-all text-sm font-mono border border-yellow-400"
-                  >
-                    💥 BOLD STYLE
+                    🪄 Ready to Cast Export Spells
                   </button>
                 </div>
               </div>
-              
-              <div className="border-2 border-green-600 rounded-lg p-6 hover:shadow-2xl transition-all bg-black/50">
-                <h3 className="text-lg font-bold text-green-400 mb-2 font-mono">🎬 SUBTITLE (.srt)</h3>
-                <p className="text-green-300 text-sm mb-4 font-mono">Universal format for video players</p>
-                <button 
-                  onClick={exportSRT}
-                  className="w-full py-2 px-4 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-500 transition-all font-mono border border-purple-400"
-                >
-                  📥 DOWNLOAD SRT
-                </button>
+            )}
+
+            {currentStep === 'export' && (
+              <div className="space-y-6">
+                <div className="text-center mb-8">
+                  <h2 className="text-3xl font-bold text-purple-200 mb-3">🪄 Cast Your Export Spells</h2>
+                  <p className="text-purple-300">Transform your captions into powerful formats: JSX, SRT, VTT, and more!</p>
+                </div>
+                
+                <div className="magical-export-wrapper">
+                  <ExportOptions 
+                    captions={captions}
+                    projectName={projectName}
+                    transcriptionId={transcriptionId}
+                  />
+                </div>
               </div>
-              
-              <div className="border-2 border-green-600 rounded-lg p-6 hover:shadow-2xl transition-all bg-black/50">
-                <h3 className="text-lg font-bold text-green-400 mb-2 font-mono">🌐 WEBVTT (.vtt)</h3>
-                <p className="text-green-300 text-sm mb-4 font-mono">Web video captions for HTML5</p>
-                <button 
-                  onClick={exportVTT}
-                  className="w-full py-2 px-4 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-500 transition-all font-mono border border-blue-400"
-                >
-                  📥 DOWNLOAD VTT
-                </button>
-              </div>
-            </div>
-            
-            <div className="mt-6 grid md:grid-cols-1 gap-6">
-              <div className="border-2 border-green-600 rounded-lg p-6 hover:shadow-2xl transition-all bg-black/50">
-                <h3 className="text-lg font-bold text-green-400 mb-2 font-mono">📄 TEXT FILE (.txt)</h3>
-                <p className="text-green-300 text-sm mb-4 font-mono">Raw text data for basic operations</p>
-                <button 
-                  onClick={exportTXT}
-                  className="w-full py-2 px-4 bg-cyan-600 text-black font-bold rounded-lg hover:bg-cyan-500 transition-all font-mono border border-cyan-400"
-                >
-                  📥 DOWNLOAD TXT
-                </button>
-              </div>
-            </div>
-            
-            <div className="mt-8 pt-6 border-t-2 border-green-600 text-center">
-              <button 
-                onClick={() => {
-                  setCurrentStep('upload');
-                  setFile(null);
-                  setTranscriptionResult(null);
-                  setEditedText('');
-                  setStatus('');
-                  setProgress(0);
-                }}
-                className="px-8 py-3 text-green-400 hover:text-green-300 transition-all font-mono font-bold tracking-wider border-2 border-green-600 rounded-lg hover:bg-green-900/30"
-              >
-                🔄 NEW MISSION
-              </button>
-            </div>
+            )}
           </div>
-        )}
+        </div>
       </main>
+
+      {/* Magical Footer */}
+      <footer className="relative z-10 text-center py-8 text-purple-400 text-sm">
+        <p className="mb-2">✨ Powered by AI Magic & Enhanced Line-Breaking Enchantments ✨</p>
+        <p className="text-purple-500">🔮 Every caption perfectly sized for video display 🔮</p>
+      </footer>
+
+      {/* Custom magical animations */}
+      <style>{`
+        @keyframes float {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-20px); }
+        }
+        
+        .magical-transcription-wrapper {
+          position: relative;
+        }
+        
+        .magical-transcription-wrapper::before {
+          content: '';
+          position: absolute;
+          top: -10px;
+          left: -10px;
+          right: -10px;
+          bottom: -10px;
+          background: linear-gradient(45deg, rgba(168, 85, 247, 0.1), rgba(236, 72, 153, 0.1));
+          border-radius: 1rem;
+          z-index: -1;
+          animation: float 3s ease-in-out infinite;
+        }
+        
+        .magical-upload-wrapper {
+          position: relative;
+        }
+        
+        .magical-upload-wrapper::before {
+          content: '';
+          position: absolute;
+          top: -15px;
+          left: -15px;
+          right: -15px;
+          bottom: -15px;
+          background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(59, 130, 246, 0.15));
+          border-radius: 1.5rem;
+          z-index: -1;
+          animation: float 4s ease-in-out infinite reverse;
+        }
+        
+        .magical-editor-wrapper {
+          position: relative;
+        }
+        
+        .magical-editor-wrapper::before {
+          content: '';
+          position: absolute;
+          top: -12px;
+          left: -12px;
+          right: -12px;
+          bottom: -12px;
+          background: linear-gradient(225deg, rgba(236, 72, 153, 0.12), rgba(139, 92, 246, 0.12));
+          border-radius: 1.25rem;
+          z-index: -1;
+          animation: float 5s ease-in-out infinite;
+        }
+        
+        .magical-export-wrapper {
+          position: relative;
+        }
+        
+        .magical-export-wrapper::before {
+          content: '';
+          position: absolute;
+          top: -18px;
+          left: -18px;
+          right: -18px;
+          bottom: -18px;
+          background: linear-gradient(315deg, rgba(34, 197, 94, 0.1), rgba(168, 85, 247, 0.1), rgba(59, 130, 246, 0.1));
+          border-radius: 1.75rem;
+          z-index: -1;
+          animation: float 6s ease-in-out infinite reverse;
+        }
+      `}</style>
     </div>
   );
 }
 
 export default App;
-

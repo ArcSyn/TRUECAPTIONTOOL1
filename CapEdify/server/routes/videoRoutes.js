@@ -7,9 +7,6 @@ const checkApiKey = require('../middleware/checkApiKey');
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs').promises;
 const path = require('path');
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
-ffmpeg.setFfmpegPath(ffmpegPath);
 require('dotenv').config();
 
 // Initialize Supabase client with service role key
@@ -18,64 +15,12 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE
 );
 
-// Helper function to extract video metadata
-function extractVideoMetadata(videoPath) {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(videoPath, (err, metadata) => {
-      if (err) {
-        console.error('❌ FFprobe error:', err);
-        reject(err);
-        return;
-      }
-      
-      try {
-        const videoStream = metadata.streams.find(stream => stream.codec_type === 'video');
-        const audioStream = metadata.streams.find(stream => stream.codec_type === 'audio');
-        
-        const videoMetadata = {
-          duration: parseFloat(metadata.format.duration) || 0,
-          width: videoStream?.width || 1920,
-          height: videoStream?.height || 1080,
-          frameRate: videoStream?.r_frame_rate ? eval(videoStream.r_frame_rate) : 30,
-          bitrate: parseInt(metadata.format.bit_rate) || 0,
-          fileSize: parseInt(metadata.format.size) || 0,
-          format: metadata.format.format_name || 'unknown',
-          codec: videoStream?.codec_name || 'unknown',
-          hasAudio: !!audioStream,
-          audioCodec: audioStream?.codec_name || null,
-          audioSampleRate: audioStream?.sample_rate || null
-        };
-        
-        console.log('📊 Video metadata extracted:', {
-          duration: `${videoMetadata.duration}s`,
-          resolution: `${videoMetadata.width}x${videoMetadata.height}`,
-          frameRate: `${videoMetadata.frameRate}fps`,
-          size: `${(videoMetadata.fileSize / 1024 / 1024).toFixed(1)}MB`
-        });
-        
-        resolve(videoMetadata);
-      } catch (parseError) {
-        console.error('❌ Metadata parsing error:', parseError);
-        reject(parseError);
-      }
-    });
-  });
-}
-
 // POST /api/video/upload
 router.post(
   '/upload',
   // checkApiKey, // Temporarily disabled for debugging
   upload.single('video'),
   async (req, res) => {
-    console.log('🚀 Upload endpoint hit!', {
-      method: req.method,
-      url: req.url,
-      hasFile: !!req.file,
-      contentType: req.headers['content-type'],
-      origin: req.headers.origin
-    });
-    
     try {
       // Set default user for dev mode
       if (!req.user) {
@@ -89,10 +34,6 @@ router.post(
       }
 
       console.log('Video upload request received:', req.file.originalname);
-
-      // Extract video metadata before compression
-      console.log('📊 Extracting video metadata...');
-      const videoMetadata = await extractVideoMetadata(req.file.path);
 
       // ULTRA-COMPRESSION like v1 - 96% compression!
       const ffmpeg = require('fluent-ffmpeg');
@@ -177,8 +118,6 @@ router.post(
         mimetype: 'audio/mp3', // Ultra-compressed audio
         size: compressedStats.size, // Use compressed file size
         status: 'uploaded',
-        // Add video metadata for After Effects JSX generation
-        metadata: videoMetadata
       };
 
       const video = await videoService.createVideo(videoData);
@@ -255,10 +194,7 @@ router.post(
           id: video.id,
           url: publicUrl,
           size: video.size,
-          duration: videoMetadata.duration,
-          width: videoMetadata.width,
-          height: videoMetadata.height,
-          frameRate: videoMetadata.frameRate
+          duration: 0
         },
         transcription: transcription ? {
           id: transcription.id,

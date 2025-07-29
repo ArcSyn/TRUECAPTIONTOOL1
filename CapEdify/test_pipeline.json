@@ -1,0 +1,10 @@
+{
+  "inputType": "srt",
+  "srtContent": "1\n00:00:01,000 --> 00:00:03,500\nHello everyone, welcome to our video.\n\n2\n00:00:03,500 --> 00:00:06,000\nToday we're going to talk about AI.\n\n3\n00:00:06,000 --> 00:00:08,500\nIt's a fascinating subject that affects us all.\n\n4\n00:00:10,000 --> 00:00:13,000\nLet's start with the basics. What is AI?",
+  "userTier": "creator",
+  "jobCountThisMonth": 5,
+  "durationMinutes": 0.5,
+  "style": "modern",
+  "position": "bottom",
+  "projectName": "CapEdify_Test_Export"
+}
