@@ -28,7 +28,12 @@
       "Bash(npm run client:*)",
       "Bash(npm install:*)",
       "Bash(start /B node:*)",
-      "Bash(cmd /c:*)"
+      "Bash(cmd /c:*)",
+      "Bash(npm run build:*)",
+      "Bash(grep:*)",
+      "Bash(Stop-Process -Id 15364 -Force)",
+      "WebFetch(domain:localhost)",
+      "Bash(npm ls:*)"
     ],
     "deny": []
   }

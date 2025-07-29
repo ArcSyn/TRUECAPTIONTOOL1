@@ -6,6 +6,7 @@ const basicRoutes = require("./routes/index");
 const videoRoutes = require("./routes/videoRoutes");
 const transcribeRoutes = require("./routes/transcribeRoutes");
 const exportRoutes = require("./routes/exportRoutes");
+const pipelineRoutes = require("./routes/pipelineRoutes");
 const cors = require("cors");
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE) {
@@ -40,7 +41,10 @@ app.get('/health', (req, res) => {
       health: '/health',
       videos: '/api/videos',
       export: '/api/export',
-      transcribe: '/api/transcribe'
+      transcribe: '/api/transcribe',
+      pipeline_run: '/api/pipeline/run',
+      pipeline_status: '/api/pipeline/status/:jobId',
+      pipeline_download: '/api/pipeline/download/:jobId'
     },
     environment: {
       node_version: process.version,
@@ -66,6 +70,9 @@ app.use('/api/transcribe', transcribeRoutes);
 
 // Export Routes
 app.use('/api/export', exportRoutes);
+
+// Pipeline Routes (AgentOrchestrator)
+app.use('/api/pipeline', pipelineRoutes);
 
 // JSON parse error handler
 app.use((err, req, res, next) => {

@@ -5,11 +5,10 @@ import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Card } from './ui/card';
 import { formatFileSize } from '@/utils/time';
-import { uploadVideo } from '@/api/video-enhanced';
 import { useToast } from '@/hooks/useToast';
 import { VideoFile } from '@/types';
 import { cn } from '@/lib/utils';
-import { DebugUpload } from './DebugInfo';
+// import { DebugUpload } from './DebugInfo'; // Temporarily disabled
 import '@/utils/debug'; // Initialize backend status checker
 // Optional step navigation
 // import { useStep } from '@/hooks/useStep';
@@ -35,52 +34,41 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
     setUploadProgress(0);
 
     try {
-      // Skip client-side compression - server handles ultra-compression
-      console.log('Uploading original file - server will handle compression');
+      console.log('📁 File selected for pipeline processing:', file.name);
 
-      const result = await uploadVideo(file, (progress: number) => {
+      // Simulate upload progress for UI feedback
+      for (let progress = 0; progress <= 100; progress += 20) {
         setUploadProgress(progress);
-      });
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
 
+      // Create VideoFile object with local URL for preview
       const videoUrl = URL.createObjectURL(file);
 
       const videoFile: VideoFile = {
         file: file,
-        url: result.videoUrl,
-        duration: result.duration,
-        size: result.size,
+        url: videoUrl,
+        duration: 0, // Will be calculated by pipeline
+        size: file.size,
         name: file.name,
-        id: result.videoId,
-        transcriptionId: result.transcriptionId,
-        transcriptionStatus: result.transcriptionStatus,
+        id: `temp-${Date.now()}`, // Temporary ID
+        transcriptionId: undefined,
+        transcriptionStatus: 'pending',
       };
 
       onVideoUploaded(videoFile);
-      // setStep('transcribe'); // Optional transition
 
       toast({
-        title: 'Upload successful',
-        description: `${file.name} uploaded.`,
+        title: 'File ready for processing',
+        description: `${file.name} will be processed by the magical pipeline.`,
       });
     } catch (err: any) {
-      console.error('Upload failed:', err);
+      console.error('File preparation failed:', err);
       setLastError(err);
       
-      let errorMessage = 'Could not upload video.';
-      
-      if (err.message) {
-        if (err.message.includes('Failed to fetch')) {
-          errorMessage = 'Cannot connect to server. Please ensure the backend is running on port 4000.';
-        } else if (err.message.includes('NetworkError')) {
-          errorMessage = 'Network error. Please check your internet connection.';
-        } else {
-          errorMessage = err.message;
-        }
-      }
-      
       toast({
-        title: 'Upload failed',
-        description: errorMessage,
+        title: 'File preparation failed',
+        description: 'Could not prepare file for processing.',
         variant: 'destructive',
       });
     } finally {
@@ -113,7 +101,7 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
             <div>
               <h3 className={cn("font-semibold text-gray-900")}>{uploadedFile.name}</h3>
               <p className={cn("text-gray-600 text-sm")}>
-                {formatFileSize(uploadedFile.size)} • Ready for transcription
+                {formatFileSize(uploadedFile.size)} • Ready for magical processing ✨
               </p>
             </div>
           </div>
@@ -168,12 +156,12 @@ export function VideoUpload({ onVideoUploaded }: VideoUploadProps) {
         </div>
       </div>
       
-      <DebugUpload 
+      {/* <DebugUpload 
         uploadProgress={uploadProgress}
         isUploading={isUploading}
         uploadedFile={uploadedFile}
         error={lastError}
-      />
+      /> */}
     </Card>
   );
 }

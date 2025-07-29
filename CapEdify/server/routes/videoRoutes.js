@@ -220,13 +220,13 @@ router.get('/', checkApiKey, async (req, res) => {
     res.json({
       success: true,
       videos: videos.map((video) => ({
-        id: video._id,
-        filename: video.originalName,
+        id: video.id,
+        filename: video.original_name,
         size: video.size,
         duration: video.duration,
         status: video.status,
-        uploadedAt: video.uploadedAt,
-        lastModified: video.lastModified,
+        uploadedAt: video.created_at,
+        lastModified: video.updated_at,
       })),
     });
   } catch (error) {
@@ -246,13 +246,13 @@ router.get('/:id', checkApiKey, async (req, res) => {
     res.json({
       success: true,
       video: {
-        id: video._id,
-        filename: video.originalName,
+        id: video.id,
+        filename: video.original_name,
         size: video.size,
         duration: video.duration,
         status: video.status,
-        uploadedAt: video.uploadedAt,
-        lastModified: video.lastModified,
+        uploadedAt: video.created_at,
+        lastModified: video.updated_at,
       },
     });
   } catch (error) {
@@ -296,10 +296,10 @@ router.put('/:id/status', checkApiKey, async (req, res) => {
     res.json({
       success: true,
       video: {
-        id: video._id,
-        filename: video.originalName,
+        id: video.id,
+        filename: video.original_name,
         status: video.status,
-        lastModified: video.lastModified,
+        lastModified: video.updated_at,
       },
     });
   } catch (error) {

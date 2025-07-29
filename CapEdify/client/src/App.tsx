@@ -4,6 +4,7 @@ import { TranscriptionProgress } from './components/TranscriptionProgress';
 import { VideoUpload } from './components/VideoUpload';
 import { CaptionEditor } from './components/CaptionEditor';
 import { ExportOptions } from './components/ExportOptions';
+import { runPipeline, pollPipelineProgress, downloadPipelineResult, triggerDownload, PipelineStatus } from './api/pipeline';
 
 // Simple types for now
 interface VideoFile {
@@ -65,28 +66,100 @@ function App() {
   const [transcriptionId, setTranscriptionId] = useState<string>('');
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [projectName, setProjectName] = useState<string>('');
+  
+  // New pipeline integration state
+  const [pipelineJobId, setPipelineJobId] = useState<string>('');
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus | null>(null);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [processingProgress, setProcessingProgress] = useState<number>(0);
+  const [processingMessage, setProcessingMessage] = useState<string>('');
+  const [jsxDownloadReady, setJsxDownloadReady] = useState<boolean>(false);
 
-  const handleVideoUploaded = (video: VideoFile) => {
+  const handleVideoUploaded = async (video: VideoFile) => {
     setUploadedVideo(video);
-    setProjectName(video.name.replace(/\.[^/.]+$/, '')); // Remove extension
+    const cleanProjectName = video.name.replace(/\.[^/.]+$/, ''); // Remove extension
+    setProjectName(cleanProjectName);
     
-    // Mark upload as complete and move to transcription
+    // Mark upload as complete and start pipeline processing
     setCompletedSteps(['upload']);
     setCurrentStep('transcribe');
+    setIsProcessing(true);
+    setProcessingProgress(0);
+    setProcessingMessage('Starting magical transcription...');
+    
+    try {
+      console.log('🚀 Starting AgentOrchestrator pipeline for video:', video.name);
+      
+      // Start the pipeline with video file
+      const pipelineJob = await runPipeline({
+        inputType: 'video',
+        file: video.file,
+        userTier: 'creator', // You can make this dynamic based on user
+        jobCountThisMonth: 1,
+        projectName: cleanProjectName,
+        style: 'modern',
+        position: 'bottom'
+      });
+      
+      setPipelineJobId(pipelineJob.jobId);
+      console.log('✅ Pipeline started:', pipelineJob.jobId);
+      
+      // Start polling for progress
+      await pollPipelineProgress(pipelineJob.jobId, (status) => {
+        setPipelineStatus(status);
+        setProcessingProgress(status.progress);
+        setProcessingMessage(status.progressMessage);
+        
+        // Update UI steps based on progress
+        if (status.progress >= 25 && !completedSteps.includes('transcribe')) {
+          setCompletedSteps(['upload', 'transcribe']);
+          setCurrentStep('edit');
+        }
+        if (status.progress >= 75 && !completedSteps.includes('edit')) {
+          setCompletedSteps(['upload', 'transcribe', 'edit']);
+          setCurrentStep('export');
+        }
+        if (status.progress === 100) {
+          setCompletedSteps(['upload', 'transcribe', 'edit', 'export']);
+          setJsxDownloadReady(true);
+          setIsProcessing(false);
+          setProcessingMessage('✨ Magic complete! JSX ready for download.');
+        }
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Pipeline failed:', error);
+      setIsProcessing(false);
+      setProcessingMessage(`❌ Magic failed: ${error.message}`);
+      setProcessingProgress(0);
+    }
   };
 
-  const handleTranscriptionComplete = (id: string) => {
-    setTranscriptionId(id);
+  // Download handler for JSX file
+  const handleDownloadJSX = async () => {
+    if (!pipelineJobId) {
+      console.error('No pipeline job ID available');
+      return;
+    }
     
-    // Mark transcription as complete and move to editing
-    setCompletedSteps(['upload', 'transcribe']);
-    setCurrentStep('edit');
+    try {
+      console.log('📥 Downloading JSX file for job:', pipelineJobId);
+      const { blob, filename } = await downloadPipelineResult(pipelineJobId);
+      
+      // Trigger browser download
+      triggerDownload(blob, filename);
+      
+      console.log('✅ JSX file downloaded successfully:', filename);
+      setProcessingMessage('🎉 JSX downloaded! Import into After Effects.');
+      
+    } catch (error: any) {
+      console.error('❌ Download failed:', error);
+      setProcessingMessage(`❌ Download failed: ${error.message}`);
+    }
   };
 
-  const handleCaptionsReady = (newCaptions: Caption[]) => {
-    setCaptions(newCaptions);
-    
-    // Mark editing as complete and move to export
+  const handleCaptionsReady = (captionsData: Caption[]) => {
+    setCaptions(captionsData);
     setCompletedSteps(['upload', 'transcribe', 'edit']);
     setCurrentStep('export');
   };
@@ -227,14 +300,64 @@ function App() {
               <div className="space-y-6">
                 <div className="text-center mb-8">
                   <h2 className="text-3xl font-bold text-purple-200 mb-3">✨ Divine the Words</h2>
-                  <p className="text-purple-300">Our AI spirits are listening to your video and transcribing every word</p>
+                  <p className="text-purple-300">Our AI spirits are casting magical spells on your video</p>
                 </div>
                 
                 <div className="magical-transcription-wrapper">
-                  <TranscriptionProgress 
-                    videoId={uploadedVideo.id || 'temp-id'} 
-                    onTranscriptionComplete={handleTranscriptionComplete}
-                  />
+                  {isProcessing ? (
+                    <div className="bg-black/30 backdrop-blur-xl rounded-2xl p-8 border border-purple-500/30">
+                      <div className="text-center space-y-6">
+                        <div className="flex justify-center">
+                          <div className="relative">
+                            <div className="w-16 h-16 border-4 border-purple-500/30 border-t-purple-400 rounded-full animate-spin"></div>
+                            <div className="absolute inset-0 flex items-center justify-center text-2xl">
+                              ✨
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <h3 className="text-xl font-semibold text-purple-200">
+                            Agent Pipeline Active
+                          </h3>
+                          <p className="text-purple-300">{processingMessage}</p>
+                          
+                          {/* Progress bar */}
+                          <div className="w-full bg-gray-700/50 rounded-full h-3 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500 rounded-full"
+                              style={{ width: `${processingProgress}%` }}
+                            />
+                          </div>
+                          <p className="text-sm text-purple-400">{processingProgress}% complete</p>
+                        </div>
+                        
+                        {/* Agent stages */}
+                        <div className="grid grid-cols-4 gap-4 mt-6">
+                          <div className={`p-3 rounded-lg text-center ${processingProgress >= 25 ? 'bg-green-500/20 text-green-300' : 'bg-gray-700/30 text-gray-400'}`}>
+                            <div className="text-lg">💳</div>
+                            <div className="text-xs">Credits</div>
+                          </div>
+                          <div className={`p-3 rounded-lg text-center ${processingProgress >= 50 ? 'bg-green-500/20 text-green-300' : 'bg-gray-700/30 text-gray-400'}`}>
+                            <div className="text-lg">✂️</div>
+                            <div className="text-xs">Split</div>
+                          </div>
+                          <div className={`p-3 rounded-lg text-center ${processingProgress >= 75 ? 'bg-green-500/20 text-green-300' : 'bg-gray-700/30 text-gray-400'}`}>
+                            <div className="text-lg">📝</div>
+                            <div className="text-xs">Format</div>
+                          </div>
+                          <div className={`p-3 rounded-lg text-center ${processingProgress >= 100 ? 'bg-green-500/20 text-green-300' : 'bg-gray-700/30 text-gray-400'}`}>
+                            <div className="text-lg">🏗️</div>
+                            <div className="text-xs">JSX</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center text-purple-300">
+                      <p>Upload a video to start the magical transcription process</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -271,15 +394,63 @@ function App() {
               <div className="space-y-6">
                 <div className="text-center mb-8">
                   <h2 className="text-3xl font-bold text-purple-200 mb-3">🪄 Cast Your Export Spells</h2>
-                  <p className="text-purple-300">Transform your captions into powerful formats: JSX, SRT, VTT, and more!</p>
+                  <p className="text-purple-300">Your magical JSX export is ready for After Effects!</p>
                 </div>
                 
                 <div className="magical-export-wrapper">
-                  <ExportOptions 
-                    captions={captions}
-                    projectName={projectName}
-                    transcriptionId={transcriptionId}
-                  />
+                  {jsxDownloadReady ? (
+                    <div className="bg-black/30 backdrop-blur-xl rounded-2xl p-8 border border-green-500/30 text-center space-y-6">
+                      <div className="text-6xl animate-bounce">🎉</div>
+                      
+                      <div className="space-y-3">
+                        <h3 className="text-2xl font-bold text-green-300">
+                          ✨ Magic Complete! ✨
+                        </h3>
+                        <p className="text-purple-300">
+                          Your video has been processed by the AgentOrchestrator pipeline
+                        </p>
+                        
+                        {pipelineStatus?.result && (
+                          <div className="bg-purple-900/30 rounded-lg p-4 space-y-2">
+                            <p className="text-sm text-purple-200">
+                              📊 <strong>{pipelineStatus.result.sceneCount}</strong> scenes created
+                            </p>
+                            <p className="text-sm text-purple-200">
+                              💎 <strong>{pipelineStatus.result.creditInfo.estimatedCreditsUsed}</strong> credits used
+                            </p>
+                            <p className="text-sm text-purple-200">
+                              ⚡ Processed in <strong>{pipelineStatus.result.metadata.processing.totalTime}ms</strong>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <button
+                        onClick={handleDownloadJSX}
+                        className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 
+                                 text-white font-bold rounded-xl shadow-lg hover:shadow-green-500/25 
+                                 transform hover:scale-105 transition-all duration-300 text-lg"
+                      >
+                        📥 Download JSX for After Effects
+                      </button>
+                      
+                      <div className="text-sm text-purple-400 space-y-1">
+                        <p>🎬 Import this JSX file into After Effects</p>
+                        <p>📐 Captions are optimized for 1920×1080 with screen-safe line breaks</p>
+                        <p>⏱️ Timestamps are preserved for perfect sync</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-black/30 backdrop-blur-xl rounded-2xl p-8 border border-purple-500/30 text-center">
+                      <div className="text-4xl mb-4">🔮</div>
+                      <h3 className="text-xl font-semibold text-purple-200 mb-2">
+                        Processing Your Video...
+                      </h3>
+                      <p className="text-purple-300">
+                        The magical agents are working their spells. This will complete soon!
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -289,8 +460,13 @@ function App() {
 
       {/* Magical Footer */}
       <footer className="relative z-10 text-center py-8 text-purple-400 text-sm">
-        <p className="mb-2">✨ Powered by AI Magic & Enhanced Line-Breaking Enchantments ✨</p>
-        <p className="text-purple-500">🔮 Every caption perfectly sized for video display 🔮</p>
+        <p className="mb-2">✨ Powered by AgentOrchestrator Pipeline & Claude AI Magic ✨</p>
+        <p className="text-purple-500">🔮 4-Agent System: Credit → Split → Format → JSX 🔮</p>
+        {pipelineStatus?.result && (
+          <p className="text-purple-600 mt-2">
+            🏗️ Last export: {pipelineStatus.result.sceneCount} scenes in {pipelineStatus.result.metadata.processing.totalTime}ms
+          </p>
+        )}
       </footer>
 
       {/* Custom magical animations */}

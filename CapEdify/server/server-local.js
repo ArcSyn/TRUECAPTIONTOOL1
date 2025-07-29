@@ -463,6 +463,10 @@ app.use(express.static('public'));
 // Initialize local database
 initLocalDB();
 
+// Import and use pipeline routes
+const pipelineRoutes = require('./routes/pipelineRoutes');
+app.use('/api/pipeline', pipelineRoutes);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -475,6 +479,9 @@ app.get('/health', (req, res) => {
       health: '/health',
       videos: '/api/videos',
       transcribe: '/api/transcribe',
+      pipeline_run: '/api/pipeline/run',
+      pipeline_status: '/api/pipeline/status/:jobId',
+      pipeline_download: '/api/pipeline/download/:jobId',
       export_phase2: '/api/export/jsx/enhanced',
       export_phase3_jsx: '/api/export/jsx/phase3',
       export_phase3_srt: '/api/export/srt/phase3',
