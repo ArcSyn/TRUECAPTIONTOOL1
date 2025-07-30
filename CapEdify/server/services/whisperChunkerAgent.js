@@ -183,10 +183,14 @@ class WhisperChunkerAgent {
    * @private
    */
   async _extractOptimalAudio(videoPath) {
-    const audioPath = videoPath.replace(path.extname(videoPath), '_fullength_audio.wav');
+    const videoDir = path.dirname(videoPath);
+    const videoName = path.basename(videoPath, path.extname(videoPath));
+    const audioPath = path.join(videoDir, `${videoName}_fullength_audio.wav`);
     
     return new Promise((resolve, reject) => {
       console.log('🎵 Extracting audio optimized for Whisper...');
+      console.log(`📹 Input video path: ${videoPath}`);
+      console.log(`🎧 Output audio path: ${audioPath}`);
       
       ffmpeg(videoPath)
         .audioCodec('pcm_s16le')   // 16-bit PCM (Whisper's preferred format)

@@ -21,31 +21,66 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
-const { executePipeline } = require('../services/AgentOrchestrator');
+const ffmpeg = require('fluent-ffmpeg');
+const whisperChunkerAgent = require('../services/whisperChunkerAgent');
+const captionSplitAgent = require('../agents/CaptionSplitAgent');
+
+// Import getVideoDuration from server-local.js (simplified version)
+async function getVideoDuration(videoPath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(videoPath, (err, metadata) => {
+      if (err) {
+        console.error('FFprobe error:', err);
+        resolve(2.0); // Default fallback
+      } else {
+        const duration = metadata.format.duration;
+        resolve(duration / 60); // Convert to minutes
+      }
+    });
+  });
+}
 
 // Simple UUID generator (no external dependency)
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
 }
 
+// Helper function to format seconds to SRT timestamp
+function formatSRTTime(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 1000);
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;
+}
+
+// Helper function to parse SRT timestamp to seconds
+function srtTimeToSeconds(timestamp) {
+  const [time, ms] = timestamp.split(',');
+  const [hours, minutes, seconds] = time.split(':').map(Number);
+  return hours * 3600 + minutes * 60 + seconds + parseInt(ms) / 1000;
+}
+
 const router = express.Router();
 
 // Configure multer for file uploads
 const upload = multer({
-  dest: 'uploads/temp/',
+  dest: path.join(__dirname, '../uploads/temp/'),
   limits: {
     fileSize: 100 * 1024 * 1024 * 1024, // 100GB max file size
   },
   fileFilter: (req, file, cb) => {
-    // Accept video files and SRT files
-    const allowedMimes = [
-      'video/mp4', 'video/quicktime', 'video/webm', 'video/avi',
-      'text/plain', 'application/x-subrip' // SRT files
-    ];
+    // Accept video files and SRT files - temporarily allow all for testing
+    console.log(`📁 File upload: ${file.originalname}, mimetype: ${file.mimetype}`);
     
-    if (allowedMimes.includes(file.mimetype) || file.originalname.endsWith('.srt')) {
+    const isVideo = file.mimetype.startsWith('video/') || file.originalname.endsWith('.mp4') || file.originalname.endsWith('.mov') || file.originalname.endsWith('.avi');
+    const isSRT = file.originalname.endsWith('.srt') || file.mimetype === 'text/plain';
+    
+    if (isVideo || isSRT) {
       cb(null, true);
     } else {
+      console.log(`❌ Rejected file: ${file.originalname} (${file.mimetype})`);
       cb(new Error('Invalid file type. Only video and SRT files are allowed.'));
     }
   }
@@ -213,6 +248,7 @@ router.post('/run', upload.single('file'), async (req, res) => {
 
     let srtContent = '';
     let durationMinutes = 0;
+    let videoFilePath = null;
 
     // Validate input type
     if (!inputType || !['video', 'srt'].includes(inputType)) {
@@ -252,27 +288,18 @@ router.post('/run', upload.single('file'), async (req, res) => {
         });
       }
 
-      // For video input, we would:
-      // 1. Extract audio and get duration
-      // 2. Run through WhisperChunker to get SRT
-      // For now, simulate this process
+      // For video input, get duration but keep file for transcription
+      console.log(`📁 Video file uploaded to: ${req.file.path}`);
       durationMinutes = await getVideoDuration(req.file.path);
       
-      // Simulate SRT generation (replace with actual transcription in production)
-      srtContent = `1
-00:00:01,000 --> 00:00:03,500
-This is a sample transcription from uploaded video.
-
-2
-00:00:03,500 --> 00:00:06,000
-The actual implementation would use WhisperChunker agent.`;
-
-      // Clean up uploaded file
-      await fs.unlink(req.file.path).catch(() => {});
+      // Don't clean up file yet - we need it for transcription
+      // Store the file path for later use in the pipeline
+      videoFilePath = req.file.path;
+      console.log(`🎬 Video file path stored: ${videoFilePath}`);
     }
 
-    // Validate required data
-    if (!srtContent.trim()) {
+    // Validate required data - for video input, SRT will be generated via transcription
+    if (inputType === 'srt' && !srtContent.trim()) {
       return res.status(400).json({
         success: false,
         error: 'No valid SRT content provided',
@@ -287,6 +314,7 @@ The actual implementation would use WhisperChunker agent.`;
       userTier,
       durationMinutes,
       jobCountThisMonth: parseInt(jobCountThisMonth) || 0,
+      videoFilePath, // Add video file path if exists
       options: {
         style,
         position,
@@ -302,24 +330,96 @@ The actual implementation would use WhisperChunker agent.`;
     
     setImmediate(async () => {
       try {
-        const result = await executePipeline(pipelineInput, (progress, message) => {
-          job.updateProgress(progress, message);
-        });
-
-        if (result.success) {
-          // Generate JSX file
-          const jsxContent = generateJSXFile(result.data, projectName);
-          const jsxFileName = `${projectName}_${jobId}.jsx`;
-          const jsxFilePath = path.join('uploads/jsx', jsxFileName);
+        let srtResult = srtContent;
+        let rawTranscriptionText = '';
+        
+        // If video input, run through WhisperChunker for real transcription
+        if (inputType === 'video' && pipelineInput.videoFilePath) {
+          job.updateProgress(10, '🎧 Starting real Whisper transcription...');
           
-          // Ensure JSX directory exists
-          await fs.mkdir(path.dirname(jsxFilePath), { recursive: true });
-          await fs.writeFile(jsxFilePath, jsxContent, 'utf-8');
+          const transcriptionResult = await whisperChunkerAgent.transcribeFullLength(
+            pipelineInput.videoFilePath, // video path
+            'small', // model
+            (progress, message) => {
+              job.updateProgress(10 + (progress * 0.6), message); // 10-70% for transcription
+            }
+          );
           
-          job.complete(result, jsxFilePath);
+          // Get the raw transcription text (like the old system)
+          rawTranscriptionText = transcriptionResult.segments.map(segment => segment.text).join(' ');
+          
+          // Convert segments to SRT format (transcriptionResult contains segments directly)
+          srtResult = transcriptionResult.segments.map((segment, index) => {
+            const startTime = formatSRTTime(segment.start);
+            const endTime = formatSRTTime(segment.end);
+            return `${index + 1}\n${startTime} --> ${endTime}\n${segment.text}\n`;
+          }).join('\n');
+          
+          // Clean up video file after transcription
+          await fs.unlink(pipelineInput.videoFilePath).catch(() => {});
         } else {
-          job.fail(result.error);
+          // For SRT input, extract just the text content
+          rawTranscriptionText = srtResult.replace(/\d+\n\d+:\d+:\d+,\d+ --> \d+:\d+:\d+,\d+\n/g, ' ').replace(/\n/g, ' ').trim();
         }
+        
+        // Run through CaptionSplitAgent for JSX export (keep for After Effects captions)
+        job.updateProgress(75, '✂️ Breaking captions into screen-safe lines...');
+        const sceneSegments = await captionSplitAgent.run(srtResult);
+        
+        // Create result format that matches what generateJSXFile expects
+        const pipelineResult = {
+          jsxScenes: sceneSegments.map(scene => ({
+            scene: scene.scene,
+            start: scene.start,
+            end: scene.end,
+            text: scene.text, // Already line-broken by CaptionSplitAgent
+            layer: `Scene_${scene.scene}`,
+            styles: ['fade-in', 'fade-out']
+          })),
+          metadata: {
+            durationMinutes: durationMinutes,
+            userTier: userTier,
+            sceneCount: sceneSegments.length
+          }
+        };
+        
+        // Generate JSX file with properly formatted captions
+        job.updateProgress(90, '📄 Generating After Effects JSX...');
+        const jsxContent = generateJSXFile(pipelineResult, projectName);
+        const jsxFileName = `${projectName}_${jobId}.jsx`;
+        const jsxFilePath = path.join('uploads/jsx', jsxFileName);
+        
+        // Ensure JSX directory exists
+        await fs.mkdir(path.dirname(jsxFilePath), { recursive: true });
+        await fs.writeFile(jsxFilePath, jsxContent, 'utf-8');
+        
+        // Complete the job with proper result format
+        const finalResult = {
+          success: true,
+          data: {
+            sceneCount: sceneSegments.length,
+            creditInfo: {
+              estimatedCreditsUsed: Math.ceil(durationMinutes * 2)
+            },
+            metadata: pipelineResult.metadata,
+            transcriptionData: {
+              text: rawTranscriptionText, // Raw continuous text like old system
+              segments: [{ // Single segment with all the text for display
+                id: 'full_transcription',
+                start: 0,
+                end: durationMinutes * 60,
+                text: rawTranscriptionText
+              }],
+              captionSegments: sceneSegments, // Keep caption-split segments for JSX export only
+              srtContent: srtResult,
+              totalCharacters: rawTranscriptionText.length,
+              totalWords: rawTranscriptionText.split(/\s+/).filter(word => word.length > 0).length
+            }
+          }
+        };
+        
+        job.complete(finalResult, jsxFilePath);
+        
       } catch (error) {
         console.error(`Pipeline job ${jobId} failed:`, error);
         job.fail({
@@ -382,6 +482,7 @@ router.get('/status/:jobId', (req, res) => {
       sceneCount: job.result.data.sceneCount,
       creditInfo: job.result.data.creditInfo,
       metadata: job.result.data.metadata,
+      transcriptionData: job.result.data.transcriptionData,
       downloadReady: !!job.jsxFilePath
     };
   }
@@ -501,5 +602,173 @@ router.delete('/jobs/:jobId', async (req, res) => {
     });
   }
 });
+
+/**
+ * GET /api/pipeline/export/:jobId/jsx - Download JSX with specific style
+ */
+router.get('/export/:jobId/jsx', async (req, res) => {
+  const { jobId } = req.params;
+  const { style = 'modern' } = req.query;
+  const job = pipelineJobs.get(jobId);
+
+  if (!job) {
+    return res.status(404).json({
+      success: false,
+      error: 'Job not found',
+      jobId
+    });
+  }
+
+  if (job.status !== 'completed' || !job.result?.data?.transcriptionData) {
+    return res.status(400).json({
+      success: false,
+      error: 'Job not completed or transcription data not available',
+      jobId
+    });
+  }
+
+  try {
+    const { transcriptionData } = job.result.data;
+    const aeJSXExporterAgent = require('../services/aeJSXExporterAgent');
+    
+    // Generate JSX with specified style using the AE JSX Exporter Agent
+    const jsxContent = await aeJSXExporterAgent.generateJSX({
+      segments: transcriptionData.captionSegments || transcriptionData.segments, // Use caption-split segments for JSX
+      projectName: `${jobId}_${style}`,
+      style: style,
+      position: 'bottom'
+    });
+
+    // Set download headers
+    const fileName = `${jobId}_${style}.jsx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/javascript');
+    res.send(jsxContent);
+
+  } catch (error) {
+    console.error(`❌ JSX export failed for job ${jobId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'JSX export failed',
+      details: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/pipeline/export/:jobId/srt - Download SRT file
+ */
+router.get('/export/:jobId/srt', async (req, res) => {
+  const { jobId } = req.params;
+  const job = pipelineJobs.get(jobId);
+
+  if (!job || job.status !== 'completed' || !job.result?.data?.transcriptionData) {
+    return res.status(404).json({
+      success: false,
+      error: 'Job not found or not completed'
+    });
+  }
+
+  try {
+    const srtContent = job.result.data.transcriptionData.srtContent;
+    
+    const fileName = `${jobId}.srt`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/x-subrip');
+    res.send(srtContent);
+
+  } catch (error) {
+    console.error(`❌ SRT export failed for job ${jobId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'SRT export failed'
+    });
+  }
+});
+
+/**
+ * GET /api/pipeline/export/:jobId/vtt - Download VTT file
+ */
+router.get('/export/:jobId/vtt', async (req, res) => {
+  const { jobId } = req.params;
+  const job = pipelineJobs.get(jobId);
+
+  if (!job || job.status !== 'completed' || !job.result?.data?.transcriptionData) {
+    return res.status(404).json({
+      success: false,
+      error: 'Job not found or not completed'
+    });
+  }
+
+  try {
+    const { segments } = job.result.data.transcriptionData;
+    
+    // Convert SRT to VTT format
+    let vttContent = 'WEBVTT\n\n';
+    segments.forEach((segment, index) => {
+      const startTime = formatVTTTime(segment.start);
+      const endTime = formatVTTTime(segment.end);
+      vttContent += `${startTime} --> ${endTime}\n${segment.text}\n\n`;
+    });
+    
+    const fileName = `${jobId}.vtt`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'text/vtt');
+    res.send(vttContent);
+
+  } catch (error) {
+    console.error(`❌ VTT export failed for job ${jobId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'VTT export failed'
+    });
+  }
+});
+
+/**
+ * GET /api/pipeline/export/:jobId/txt - Download plain text transcription
+ */
+router.get('/export/:jobId/txt', async (req, res) => {
+  const { jobId } = req.params;
+  const job = pipelineJobs.get(jobId);
+
+  if (!job || job.status !== 'completed' || !job.result?.data?.transcriptionData) {
+    return res.status(404).json({
+      success: false,
+      error: 'Job not found or not completed'
+    });
+  }
+
+  try {
+    const { text, segments } = job.result.data.transcriptionData;
+    
+    // Use the raw continuous text instead of segments
+    const header = `Transcription - ${new Date().toISOString()}\nJob ID: ${jobId}\n\n`;
+    const fullContent = header + (text || segments[0]?.text || 'No transcription available');
+    
+    const fileName = `${jobId}_transcription.txt`;
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(fullContent);
+
+  } catch (error) {
+    console.error(`❌ Text export failed for job ${jobId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: 'Text export failed'
+    });
+  }
+});
+
+/**
+ * Helper function to format time for VTT (HH:MM:SS.mmm)
+ */
+function formatVTTTime(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toFixed(3).padStart(6, '0')}`;
+}
 
 module.exports = router;

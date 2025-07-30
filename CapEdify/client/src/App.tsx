@@ -1,10 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import './App.css';
 import { TranscriptionProgress } from './components/TranscriptionProgress';
 import { VideoUpload } from './components/VideoUpload';
-import { CaptionEditor } from './components/CaptionEditor';
-import { ExportOptions } from './components/ExportOptions';
-import { runPipeline, pollPipelineProgress, downloadPipelineResult, triggerDownload, PipelineStatus } from './api/pipeline';
+import { runPipeline, pollPipelineProgress, downloadPipelineResult, downloadPipelineJSX, downloadPipelineSRT, downloadPipelineVTT, downloadPipelineText, triggerDownload, getPipelineStatus, PipelineStatus } from './api/pipeline';
 
 // Simple types for now
 interface VideoFile {
@@ -24,6 +22,8 @@ interface Caption {
   endTime: number;
   text: string;
 }
+
+
 
 // Magical themed step configuration
 const MAGICAL_STEPS = [
@@ -74,6 +74,106 @@ function App() {
   const [processingProgress, setProcessingProgress] = useState<number>(0);
   const [processingMessage, setProcessingMessage] = useState<string>('');
   const [jsxDownloadReady, setJsxDownloadReady] = useState<boolean>(false);
+  const [transcriptionStats, setTranscriptionStats] = useState<{words: number, characters: number} | null>(null);
+
+  // Check for completed pipeline on mount
+  React.useEffect(() => {
+    const savedJobId = localStorage.getItem('currentPipelineJob');
+    if (savedJobId && !pipelineJobId) {
+      console.log('🔄 Checking saved pipeline job:', savedJobId);
+      checkPipelineStatus(savedJobId);
+    }
+  }, [pipelineJobId]); // Only re-run when pipelineJobId changes
+
+  const checkPipelineStatus = async (jobId: string) => {
+    try {
+      const status = await getPipelineStatus(jobId);
+      setPipelineStatus(status);
+      setPipelineJobId(jobId);
+      
+      if (status.status === 'completed') {
+        setCompletedSteps(['upload', 'transcribe']);
+        setCurrentStep('edit');
+        setJsxDownloadReady(true);
+        setIsProcessing(false);
+        setProcessingProgress(100);
+        
+        // Extract transcription data from pipeline result
+        if (status.result) {
+          extractTranscriptionData(status, jobId);
+        }
+        
+        setProcessingMessage('✨ Transcription complete! Review your magical text.');
+      } else if (status.status === 'processing') {
+        setCurrentStep('transcribe');
+        setIsProcessing(true);
+        setProcessingProgress(status.progress);
+        setProcessingMessage(status.progressMessage || 'Processing...');
+        
+        // Resume polling
+        await pollPipelineProgress(jobId, (updatedStatus) => {
+          setPipelineStatus(updatedStatus);
+          setProcessingProgress(updatedStatus.progress);
+          setProcessingMessage(updatedStatus.progressMessage);
+          
+          if (updatedStatus.progress >= 25 && !completedSteps.includes('transcribe')) {
+            setCompletedSteps(['upload', 'transcribe']);
+          }
+          if (updatedStatus.progress === 100) {
+            // Pipeline complete - show transcription for review
+            setCompletedSteps(['upload', 'transcribe']);
+            setCurrentStep('edit');
+            setIsProcessing(false);
+            setJsxDownloadReady(true);
+            
+            // Extract transcription data from pipeline result
+            if (updatedStatus.result) {
+              extractTranscriptionData(updatedStatus, jobId);
+            }
+            
+            setProcessingMessage('✨ Transcription complete! Review your magical text.');
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error checking pipeline status:', error);
+      localStorage.removeItem('currentPipelineJob');
+    }
+  };
+
+  const extractTranscriptionData = async (status: PipelineStatus, jobId: string) => {
+    const startTime = performance.now();
+    console.log('🔄 Starting transcription data extraction...');
+    
+    try {
+      if (status.result?.transcriptionData) {
+        const { text, segments, totalCharacters, totalWords } = status.result.transcriptionData;
+        
+        console.log(`📝 Got raw transcription text: ${text.length} characters`);
+        
+        // Store the raw text as one big "caption" for display
+        const captions: Caption[] = [{
+          id: 'transcription_text',
+          startTime: 0,
+          endTime: 0,
+          text: text || ''
+        }];
+        
+        setCaptions(captions);
+        setTranscriptionId(jobId);
+        setTranscriptionStats({ words: totalWords, characters: totalCharacters });
+        
+        const totalTime = performance.now() - startTime;
+        console.log(`📊 Transcription Stats: ${totalWords} words, ${totalCharacters} characters`);
+        console.log(`⚡ Total extraction took ${totalTime.toFixed(2)}ms`);
+        
+      } else {
+        console.warn('No transcription data found in pipeline result');
+      }
+    } catch (error) {
+      console.error('Error extracting transcription data:', error);
+    }
+  };
 
   const handleVideoUploaded = async (video: VideoFile) => {
     setUploadedVideo(video);
@@ -102,6 +202,7 @@ function App() {
       });
       
       setPipelineJobId(pipelineJob.jobId);
+      localStorage.setItem('currentPipelineJob', pipelineJob.jobId);
       console.log('✅ Pipeline started:', pipelineJob.jobId);
       
       // Start polling for progress
@@ -113,17 +214,20 @@ function App() {
         // Update UI steps based on progress
         if (status.progress >= 25 && !completedSteps.includes('transcribe')) {
           setCompletedSteps(['upload', 'transcribe']);
-          setCurrentStep('edit');
-        }
-        if (status.progress >= 75 && !completedSteps.includes('edit')) {
-          setCompletedSteps(['upload', 'transcribe', 'edit']);
-          setCurrentStep('export');
         }
         if (status.progress === 100) {
-          setCompletedSteps(['upload', 'transcribe', 'edit', 'export']);
-          setJsxDownloadReady(true);
+          // Pipeline complete - show transcription for review
+          setCompletedSteps(['upload', 'transcribe']);
+          setCurrentStep('edit');
           setIsProcessing(false);
-          setProcessingMessage('✨ Magic complete! JSX ready for download.');
+          setJsxDownloadReady(true);
+          
+          // Extract transcription data from pipeline result
+          if (status.result) {
+            extractTranscriptionData(status, pipelineJob.jobId);
+          }
+          
+          setProcessingMessage('✨ Transcription complete! Review your magical text.');
         }
       });
       
@@ -158,10 +262,78 @@ function App() {
     }
   };
 
+  // New styled JSX download handlers (memoized for performance)
+  const handleDownloadJSXStyled = useCallback(async (style: 'bold' | 'modern' | 'minimal') => {
+    if (!pipelineJobId) {
+      console.error('No pipeline job ID available');
+      return;
+    }
+    
+    try {
+      console.log(`📥 Downloading ${style} JSX for job:`, pipelineJobId);
+      const { blob, filename } = await downloadPipelineJSX(pipelineJobId, style);
+      triggerDownload(blob, filename);
+      console.log(`✅ ${style} JSX downloaded:`, filename);
+    } catch (error: any) {
+      console.error(`❌ ${style} JSX download failed:`, error);
+    }
+  }, [pipelineJobId]);
+
+  const handleDownloadSRT = useCallback(async () => {
+    if (!pipelineJobId) {
+      console.error('No pipeline job ID available');
+      return;
+    }
+    
+    try {
+      console.log('📥 Downloading SRT for job:', pipelineJobId);
+      const { blob, filename } = await downloadPipelineSRT(pipelineJobId);
+      triggerDownload(blob, filename);
+      console.log('✅ SRT downloaded:', filename);
+    } catch (error: any) {
+      console.error('❌ SRT download failed:', error);
+    }
+  }, [pipelineJobId]);
+
+  const handleDownloadVTT = useCallback(async () => {
+    if (!pipelineJobId) {
+      console.error('No pipeline job ID available');
+      return;
+    }
+    
+    try {
+      console.log('📥 Downloading VTT for job:', pipelineJobId);
+      const { blob, filename } = await downloadPipelineVTT(pipelineJobId);
+      triggerDownload(blob, filename);
+      console.log('✅ VTT downloaded:', filename);
+    } catch (error: any) {
+      console.error('❌ VTT download failed:', error);
+    }
+  }, [pipelineJobId]);
+
+  const handleDownloadText = useCallback(async () => {
+    if (!pipelineJobId) {
+      console.error('No pipeline job ID available');
+      return;
+    }
+    
+    try {
+      console.log('📥 Downloading text transcription for job:', pipelineJobId);
+      const { blob, filename } = await downloadPipelineText(pipelineJobId);
+      triggerDownload(blob, filename);
+      console.log('✅ Text downloaded:', filename);
+    } catch (error: any) {
+      console.error('❌ Text download failed:', error);
+    }
+  }, [pipelineJobId]);
+
   const handleCaptionsReady = (captionsData: Caption[]) => {
+    console.log('🪄 Moving to export step with captions:', captionsData.length);
     setCaptions(captionsData);
     setCompletedSteps(['upload', 'transcribe', 'edit']);
     setCurrentStep('export');
+    // Clear the saved job from localStorage since we're done with transcription
+    localStorage.removeItem('currentPipelineJob');
   };
 
   const getCurrentStepInfo = () => MAGICAL_STEPS.find(step => step.id === currentStep);
@@ -367,14 +539,50 @@ function App() {
                 <div className="text-center mb-8">
                   <h2 className="text-3xl font-bold text-purple-200 mb-3">📜 Enchant Your Text</h2>
                   <p className="text-purple-300">Perfect your captions with magical editing tools</p>
+                  
+                  {/* Transcription Statistics */}
+                  {transcriptionStats && (
+                    <div className="mt-6 bg-black/30 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/30">
+                      <h3 className="text-lg font-semibold text-purple-200 mb-4">✨ Transcription Statistics</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-purple-900/30 rounded-lg p-4">
+                          <div className="text-2xl font-bold text-green-300">{transcriptionStats.words.toLocaleString()}</div>
+                          <div className="text-sm text-purple-300">Words</div>
+                        </div>
+                        <div className="bg-purple-900/30 rounded-lg p-4">
+                          <div className="text-2xl font-bold text-cyan-300">{transcriptionStats.characters.toLocaleString()}</div>
+                          <div className="text-sm text-purple-300">Characters</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 text-sm text-purple-400">
+                        📊 Your mystical transcription has been processed with {captions.length} scenes
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
-                <div className="magical-editor-wrapper">
-                  <CaptionEditor 
-                    captions={captions}
-                    onCaptionsChange={setCaptions}
-                    projectId={transcriptionId}
-                  />
+                {/* Simple Transcription Display */}
+                <div className="magical-transcription-display">
+                  {captions.length > 0 ? (
+                    <div className="bg-black/30 backdrop-blur-xl rounded-2xl p-6 border border-purple-500/30">
+                      <h3 className="text-lg font-semibold text-purple-200 mb-4">
+                        📜 Your Transcription
+                      </h3>
+                      <div className="bg-gray-900/50 rounded-lg p-4 max-h-96 overflow-y-auto">
+                        <textarea
+                          className="w-full h-80 bg-transparent text-purple-100 text-sm leading-relaxed resize-none border-none outline-none"
+                          value={captions[0]?.text || ''}
+                          readOnly
+                          placeholder="Transcription will appear here..."
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-black/30 backdrop-blur-xl rounded-2xl p-8 border border-purple-500/30 text-center">
+                      <div className="text-4xl mb-4">🔮</div>
+                      <p className="text-purple-300">Loading transcription...</p>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="text-center pt-4">
@@ -419,25 +627,88 @@ function App() {
                               💎 <strong>{pipelineStatus.result.creditInfo.estimatedCreditsUsed}</strong> credits used
                             </p>
                             <p className="text-sm text-purple-200">
-                              ⚡ Processed in <strong>{pipelineStatus.result.metadata.processing.totalTime}ms</strong>
+                              ⚡ Processed in <strong>{pipelineStatus.result.metadata.processing?.totalTime || 'N/A'}ms</strong>
                             </p>
                           </div>
                         )}
                       </div>
                       
-                      <button
-                        onClick={handleDownloadJSX}
-                        className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 
-                                 text-white font-bold rounded-xl shadow-lg hover:shadow-green-500/25 
-                                 transform hover:scale-105 transition-all duration-300 text-lg"
-                      >
-                        📥 Download JSX for After Effects
-                      </button>
-                      
-                      <div className="text-sm text-purple-400 space-y-1">
-                        <p>🎬 Import this JSX file into After Effects</p>
-                        <p>📐 Captions are optimized for 1920×1080 with screen-safe line breaks</p>
-                        <p>⏱️ Timestamps are preserved for perfect sync</p>
+                      {/* JSX Export Section */}
+                      <div className="space-y-4">
+                        <h4 className="text-lg font-semibold text-purple-200">🎬 After Effects JSX Exports</h4>
+                        <div className="grid grid-cols-3 gap-4">
+                          <button
+                            onClick={() => handleDownloadJSXStyled('bold')}
+                            className="p-4 bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 
+                                     text-white font-bold rounded-xl shadow-lg hover:shadow-yellow-500/25 
+                                     transform hover:scale-105 transition-all duration-300"
+                          >
+                            <div className="text-2xl mb-2">💥</div>
+                            <div className="text-sm">Bold Style</div>
+                          </button>
+                          
+                          <button
+                            onClick={() => handleDownloadJSXStyled('modern')}
+                            className="p-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 
+                                     text-white font-bold rounded-xl shadow-lg hover:shadow-blue-500/25 
+                                     transform hover:scale-105 transition-all duration-300"
+                          >
+                            <div className="text-2xl mb-2">✨</div>
+                            <div className="text-sm">Modern Style</div>
+                          </button>
+                          
+                          <button
+                            onClick={() => handleDownloadJSXStyled('minimal')}
+                            className="p-4 bg-gradient-to-r from-gray-600 to-slate-600 hover:from-gray-500 hover:to-slate-500 
+                                     text-white font-bold rounded-xl shadow-lg hover:shadow-gray-500/25 
+                                     transform hover:scale-105 transition-all duration-300"
+                          >
+                            <div className="text-2xl mb-2">📐</div>
+                            <div className="text-sm">Simple Style</div>
+                          </button>
+                        </div>
+                        <div className="text-xs text-purple-400 text-center">
+                          🎬 Import JSX files into After Effects • 📐 Optimized for 1920×1080 • ⏱️ Perfect sync
+                        </div>
+                      </div>
+
+                      {/* Subtitle Export Section */}
+                      <div className="space-y-4">
+                        <h4 className="text-lg font-semibold text-purple-200">📝 Subtitle & Text Exports</h4>
+                        <div className="grid grid-cols-3 gap-4">
+                          <button
+                            onClick={handleDownloadSRT}
+                            className="p-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 
+                                     text-white font-bold rounded-xl shadow-lg hover:shadow-green-500/25 
+                                     transform hover:scale-105 transition-all duration-300"
+                          >
+                            <div className="text-2xl mb-2">📄</div>
+                            <div className="text-sm">SRT Format</div>
+                          </button>
+                          
+                          <button
+                            onClick={handleDownloadVTT}
+                            className="p-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 
+                                     text-white font-bold rounded-xl shadow-lg hover:shadow-purple-500/25 
+                                     transform hover:scale-105 transition-all duration-300"
+                          >
+                            <div className="text-2xl mb-2">🔗</div>
+                            <div className="text-sm">VTT Format</div>
+                          </button>
+                          
+                          <button
+                            onClick={handleDownloadText}
+                            className="p-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 
+                                     text-white font-bold rounded-xl shadow-lg hover:shadow-indigo-500/25 
+                                     transform hover:scale-105 transition-all duration-300"
+                          >
+                            <div className="text-2xl mb-2">📜</div>
+                            <div className="text-sm">Plain Text</div>
+                          </button>
+                        </div>
+                        <div className="text-xs text-purple-400 text-center">
+                          📄 SRT for video editors • 🔗 VTT for web players • 📜 TXT for transcription
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -464,7 +735,9 @@ function App() {
         <p className="text-purple-500">🔮 4-Agent System: Credit → Split → Format → JSX 🔮</p>
         {pipelineStatus?.result && (
           <p className="text-purple-600 mt-2">
-            🏗️ Last export: {pipelineStatus.result.sceneCount} scenes in {pipelineStatus.result.metadata.processing.totalTime}ms
+            🏗️ Last export: {pipelineStatus.result.sceneCount} scenes
+            {pipelineStatus.result.metadata?.processing?.totalTime && 
+              ` in ${pipelineStatus.result.metadata.processing.totalTime}ms`}
           </p>
         )}
       </footer>

@@ -213,6 +213,117 @@ export async function downloadPipelineResult(jobId: string): Promise<{ blob: Blo
 }
 
 /**
+ * Download JSX with specific style from pipeline job
+ */
+export async function downloadPipelineJSX(jobId: string, style: 'bold' | 'modern' | 'minimal' = 'modern'): Promise<{ blob: Blob; filename: string }> {
+  try {
+    console.log(`📥 Requesting ${style} JSX download for job:`, jobId);
+    
+    const response = await fetch(`${API_BASE_URL}/pipeline/export/${jobId}/jsx?style=${style}`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/javascript'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'JSX download failed' }));
+      throw new Error(errorData.error || `JSX download failed: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('Content-Disposition') || '';
+    const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+    const filename = filenameMatch ? filenameMatch[1] : `${jobId}_${style}.jsx`;
+    
+    console.log(`✅ ${style} JSX downloaded:`, { filename, size: blob.size });
+    return { blob, filename };
+
+  } catch (error: any) {
+    console.error(`${style} JSX download error:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Download SRT from pipeline job
+ */
+export async function downloadPipelineSRT(jobId: string): Promise<{ blob: Blob; filename: string }> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/pipeline/export/${jobId}/srt`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/x-subrip' }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'SRT download failed' }));
+      throw new Error(errorData.error || `SRT download failed: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('Content-Disposition') || '';
+    const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+    const filename = filenameMatch ? filenameMatch[1] : `${jobId}.srt`;
+    return { blob, filename };
+  } catch (error: any) {
+    console.error('SRT download error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Download VTT from pipeline job
+ */
+export async function downloadPipelineVTT(jobId: string): Promise<{ blob: Blob; filename: string }> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/pipeline/export/${jobId}/vtt`, {
+      method: 'GET',
+      headers: { 'Accept': 'text/vtt' }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'VTT download failed' }));
+      throw new Error(errorData.error || `VTT download failed: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('Content-Disposition') || '';
+    const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+    const filename = filenameMatch ? filenameMatch[1] : `${jobId}.vtt`;
+    return { blob, filename };
+  } catch (error: any) {
+    console.error('VTT download error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Download plain text transcription from pipeline job
+ */
+export async function downloadPipelineText(jobId: string): Promise<{ blob: Blob; filename: string }> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/pipeline/export/${jobId}/txt`, {
+      method: 'GET',
+      headers: { 'Accept': 'text/plain' }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Text download failed' }));
+      throw new Error(errorData.error || `Text download failed: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const contentDisposition = response.headers.get('Content-Disposition') || '';
+    const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+    const filename = filenameMatch ? filenameMatch[1] : `${jobId}.txt`;
+    return { blob, filename };
+  } catch (error: any) {
+    console.error('Text download error:', error);
+    throw error;
+  }
+}
+
+/**
  * Helper function to trigger browser download
  * @param blob - File blob
  * @param filename - Filename for download
