@@ -81,7 +81,9 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineJob> {
 
     // Prepare form data or JSON payload
     let requestBody: FormData | string;
-    let headers: Record<string, string> = {};
+    let headers: Record<string, string> = {
+      'X-User-ID': '550e8400-e29b-41d4-a716-446655440000' // Consistent demo user ID
+    };
 
     if (input.inputType === 'video' && input.file) {
       // Video file upload

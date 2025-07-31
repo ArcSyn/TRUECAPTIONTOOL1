@@ -33,8 +33,20 @@
       "Bash(grep:*)",
       "Bash(Stop-Process -Id 15364 -Force)",
       "WebFetch(domain:localhost)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(git commit:*)",
+      "Bash(set PORT=4001)",
+      "Bash(start cmd /k \"node server-local.js\")",
+      "Bash(npm stop)",
+      "Bash(git push:*)",
+      "Bash(git tag:*)",
+      "Bash(touch:*)",
+      "WebFetch(domain:192.168.1.228)",
+      "Bash(docker run:*)",
+      "Bash(redis-server:*)",
+      "Bash(npm run lint)"
     ],
     "deny": []
-  }
+  },
+  "$schema": "https://json.schemastore.org/claude-code-settings.json"
 }

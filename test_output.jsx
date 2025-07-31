@@ -1,18 +1,20 @@
 // CapEdify Phase 3 - After Effects JSX Export
-// Generated: 2025-07-29T20:07:46.773Z
-// Project: Test_Integration
+// Generated: 2025-07-29T21:54:42.393Z
+// Project: LineBreakTest
 // Scenes: 1
-// Duration: 2 minutes
-// User Tier: creator
+// Duration: 1 minutes
+// User Tier: free
 
 // Initialize After Effects project
 var project = app.project;
-var comp = project.items.addComp("Test_Integration", 1920, 1080, 1, 120, 30);
+var comp = project.items.addComp("LineBreakTest", 1920, 1080, 1, 60, 30);
 
 
-// Scene 1: Welcome to our magical test! This tests our AgentO...
-var textLayer1 = comp.layers.addText("Welcome to our magical test! This tests our AgentOrchestrator.");
-textLayer1.name = "scene_1_welcome_our";
+// Scene 1: This is a very long caption that
+should definitely...
+var textLayer1 = comp.layers.addText("This is a very long caption that
+should definitely be broken into");
+textLayer1.name = "Scene_1";
 textLayer1.startTime = 0;
 textLayer1.outPoint = 2;
 
@@ -39,7 +41,7 @@ opacity1.setValueAtTime(1.7, 100);
 opacity1.setValueAtTime(2, 0);
 
 // Finalize composition
-comp.duration = 120;
+comp.duration = 60;
 project.save();
 
 alert("CapEdify JSX import complete! 1 text layers created.");

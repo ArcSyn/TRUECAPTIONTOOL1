@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import './App.css';
 import { TranscriptionProgress } from './components/TranscriptionProgress';
 import { VideoUpload } from './components/VideoUpload';
@@ -368,6 +369,19 @@ function App() {
             <p className="text-purple-300 text-sm">
               Transform your videos with magical AI transcription and enchanted exports
             </p>
+            
+            {/* Navigation to Batch Demo */}
+            <div className="mt-4">
+              <Link 
+                to="/demo"
+                className="inline-flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 
+                         text-white font-semibold rounded-lg shadow-lg hover:shadow-blue-500/25 
+                         transform hover:scale-105 transition-all duration-300"
+              >
+                <span>🔀</span>
+                <span>Try Batch Processing Demo</span>
+              </Link>
+            </div>
             
             {/* Current step indicator */}
             {stepInfo && (

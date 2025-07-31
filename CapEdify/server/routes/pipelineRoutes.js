@@ -22,8 +22,16 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
 const ffmpeg = require('fluent-ffmpeg');
+const { createClient } = require('@supabase/supabase-js');
+const { getUserId } = require('../middleware/userAuth');
 const whisperChunkerAgent = require('../services/whisperChunkerAgent');
 const captionSplitAgent = require('../agents/CaptionSplitAgent');
+
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE
+);
 
 // Import getVideoDuration from server-local.js (simplified version)
 async function getVideoDuration(videoPath) {
@@ -63,6 +71,79 @@ function srtTimeToSeconds(timestamp) {
 }
 
 const router = express.Router();
+
+// Database logging functions
+async function logPipelineJobStart(jobId, userId, inputData) {
+  try {
+    console.log('🔄 Attempting to log pipeline job:', {
+      jobId: jobId,
+      userId: userId,
+      userIdType: typeof userId,
+      filename: inputData.filename,
+      inputType: inputData.inputType
+    });
+
+    const { data, error } = await supabase
+      .from('pipeline_jobs_extended')
+      .insert({
+        job_id: jobId,
+        user_id: userId,
+        input_filename: inputData.filename || `${inputData.inputType}_input`,
+        input_type: inputData.inputType,
+        duration_minutes: inputData.durationMinutes,
+        processing_config: {
+          userTier: inputData.userTier,
+          style: inputData.options?.style || 'modern',
+          position: inputData.options?.position || 'bottom',
+          projectName: inputData.options?.projectName || 'CapEdify_Export'
+        },
+        status: 'processing',
+        progress: 0
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('❌ Failed to log pipeline job start:', {
+        error: error,
+        code: error.code,
+        message: error.message,
+        details: error.details
+      });
+    } else {
+      console.log('✅ Pipeline job logged to database:', {
+        jobId: jobId,
+        userId: userId,
+        data: data
+      });
+    }
+  } catch (error) {
+    console.error('❌ Database logging error:', {
+      error: error.message,
+      stack: error.stack
+    });
+  }
+}
+
+async function updatePipelineJobStatus(jobId, status, progress = null, files = null) {
+  try {
+    const updateData = { status };
+    if (progress !== null) updateData.progress = progress;
+    if (files) updateData.files_generated = files;
+    if (status === 'completed') updateData.completed_at = new Date().toISOString();
+
+    const { error } = await supabase
+      .from('pipeline_jobs_extended')
+      .update(updateData)
+      .eq('job_id', jobId);
+
+    if (error) {
+      console.error('❌ Failed to update pipeline job status:', error);
+    }
+  } catch (error) {
+    console.error('❌ Database update error:', error);
+  }
+}
 
 // Configure multer for file uploads
 const upload = multer({
@@ -232,7 +313,7 @@ alert("CapEdify JSX import complete! ${jsxScenes.length} text layers created.");
 /**
  * POST /api/pipeline/run - Execute complete agent pipeline
  */
-router.post('/run', upload.single('file'), async (req, res) => {
+router.post('/run', getUserId, upload.single('file'), async (req, res) => {
   const jobId = generateId();
   
   try {
@@ -325,6 +406,13 @@ router.post('/run', upload.single('file'), async (req, res) => {
     const job = new PipelineJob(jobId, pipelineInput, { userTier });
     pipelineJobs.set(jobId, job);
 
+    // Log job start to database
+    const inputDataForLogging = {
+      ...pipelineInput,
+      filename: req.file ? req.file.originalname : `${inputType}_input`
+    };
+    await logPipelineJobStart(jobId, req.userId, inputDataForLogging);
+
     // Start pipeline execution asynchronously
     job.start();
     
@@ -383,15 +471,52 @@ router.post('/run', upload.single('file'), async (req, res) => {
           }
         };
         
-        // Generate JSX file with properly formatted captions
-        job.updateProgress(90, '📄 Generating After Effects JSX...');
-        const jsxContent = generateJSXFile(pipelineResult, projectName);
-        const jsxFileName = `${projectName}_${jobId}.jsx`;
-        const jsxFilePath = path.join('uploads/jsx', jsxFileName);
+        // Generate all format files
+        job.updateProgress(90, '📄 Generating export files...');
         
-        // Ensure JSX directory exists
-        await fs.mkdir(path.dirname(jsxFilePath), { recursive: true });
+        // Create directories
+        const outputDir = path.join('uploads', 'outputs', jobId);
+        await fs.mkdir(outputDir, { recursive: true });
+        
+        // Generate JSX file
+        const jsxContent = generateJSXFile(pipelineResult, projectName);
+        const jsxFilePath = path.join(outputDir, `${projectName}.jsx`);
         await fs.writeFile(jsxFilePath, jsxContent, 'utf-8');
+        
+        // Generate SRT file
+        const srtFilePath = path.join(outputDir, `${projectName}.srt`);
+        await fs.writeFile(srtFilePath, srtResult, 'utf-8');
+        
+        // Generate VTT file (WebVTT format)
+        const vttContent = 'WEBVTT\n\n' + srtResult.replace(/(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})/g, '$2 --> $3').replace(/,/g, '.');
+        const vttFilePath = path.join(outputDir, `${projectName}.vtt`);
+        await fs.writeFile(vttFilePath, vttContent, 'utf-8');
+        
+        // Generate plain text file
+        const txtContent = rawTranscriptionText;
+        const txtFilePath = path.join(outputDir, `${projectName}.txt`);
+        await fs.writeFile(txtFilePath, txtContent, 'utf-8');
+        
+        // Generate JSON file with all data
+        const jsonContent = JSON.stringify({
+          metadata: pipelineResult.metadata,
+          transcription: rawTranscriptionText,
+          segments: pipelineResult.jsxScenes,
+          srt: srtResult,
+          generatedAt: new Date().toISOString(),
+          jobId: jobId
+        }, null, 2);
+        const jsonFilePath = path.join(outputDir, `${projectName}.json`);
+        await fs.writeFile(jsonFilePath, jsonContent, 'utf-8');
+        
+        // Store file paths for database
+        const generatedFiles = {
+          jsx: jsxFilePath,
+          srt: srtFilePath,
+          vtt: vttFilePath,
+          txt: txtFilePath,
+          json: jsonFilePath
+        };
         
         // Complete the job with proper result format
         const finalResult = {
@@ -418,10 +543,17 @@ router.post('/run', upload.single('file'), async (req, res) => {
           }
         };
         
+        // Update database with completion status and file paths
+        await updatePipelineJobStatus(jobId, 'completed', 100, generatedFiles);
+        
         job.complete(finalResult, jsxFilePath);
         
       } catch (error) {
         console.error(`Pipeline job ${jobId} failed:`, error);
+        
+        // Update database with failure status
+        await updatePipelineJobStatus(jobId, 'failed');
+        
         job.fail({
           stage: 'pipeline_execution',
           message: error.message,
@@ -726,6 +858,255 @@ router.get('/export/:jobId/vtt', async (req, res) => {
 });
 
 /**
+ * POST /api/pipeline/batch-run - Execute pipeline for multiple files
+ */
+router.post('/batch-run', upload.array('files', 50), async (req, res) => {
+  const batchId = generateId();
+  const startTime = Date.now();
+  
+  try {
+    console.log('🚀 Batch pipeline request received');
+    
+    // Validate request
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No video files provided',
+        batchId
+      });
+    }
+
+    // Parse options
+    const { 
+      userTier = 'free', 
+      style = 'modern',
+      position = 'bottom',
+      projectBaseName = 'CapEdify_Batch'
+    } = req.body;
+
+    console.log(`📊 Processing ${req.files.length} files for ${userTier} user`);
+
+    // Create individual jobs for each file
+    const batchJobs = [];
+    const jobPromises = req.files.map(async (file, index) => {
+      const jobId = generateId();
+      const projectName = `${projectBaseName}_${index + 1}_${path.parse(file.originalname).name}`;
+      
+      // Create individual pipeline job
+      const pipelineInput = {
+        inputType: 'video',
+        userTier,
+        style,
+        position,
+        projectName,
+        videoFilePath: file.path
+      };
+
+      const job = new PipelineJob(jobId, pipelineInput, { userTier });
+      pipelineJobs.set(jobId, job);
+      
+      batchJobs.push({
+        jobId,
+        filename: file.originalname,
+        size: file.size,
+        status: 'pending'
+      });
+
+      // Start processing asynchronously
+      job.start();
+      setImmediate(async () => {
+        try {
+          // Get video duration
+          const durationMinutes = await getVideoDuration(file.path);
+          
+          // Process with WhisperChunker
+          job.updateProgress(10, '🎧 Starting Whisper transcription...');
+          const transcriptionResult = await whisperChunkerAgent.transcribeFullLength(
+            file.path,
+            'small',
+            (progress, message) => {
+              job.updateProgress(10 + (progress * 0.6), message);
+            }
+          );
+
+          // Get raw transcription text
+          const rawTranscriptionText = transcriptionResult.segments.map(segment => segment.text).join(' ');
+          
+          // Convert to SRT format
+          const srtResult = transcriptionResult.segments.map((segment, index) => {
+            const startTime = formatSRTTime(segment.start);
+            const endTime = formatSRTTime(segment.end);
+            return `${index + 1}\n${startTime} --> ${endTime}\n${segment.text}\n`;
+          }).join('\n');
+
+          // Process with CaptionSplitAgent
+          job.updateProgress(75, '✂️ Breaking captions into screen-safe lines...');
+          const sceneSegments = await captionSplitAgent.run(srtResult);
+
+          // Generate JSX
+          job.updateProgress(90, '📄 Generating After Effects JSX...');
+          const pipelineResult = {
+            jsxScenes: sceneSegments.map(scene => ({
+              scene: scene.scene,
+              start: scene.start,
+              end: scene.end,
+              text: scene.text,
+              layer: `Scene_${scene.scene}`,
+              styles: ['fade-in', 'fade-out']
+            })),
+            metadata: {
+              durationMinutes: durationMinutes,
+              userTier: userTier,
+              sceneCount: sceneSegments.length
+            }
+          };
+
+          const jsxContent = generateJSXFile(pipelineResult, projectName);
+          const jsxFileName = `${projectName}_${jobId}.jsx`;
+          const jsxFilePath = path.join('uploads/jsx', jsxFileName);
+          
+          await fs.mkdir(path.dirname(jsxFilePath), { recursive: true });
+          await fs.writeFile(jsxFilePath, jsxContent, 'utf-8');
+
+          // Complete job
+          const finalResult = {
+            success: true,
+            data: {
+              sceneCount: sceneSegments.length,
+              creditInfo: {
+                estimatedCreditsUsed: Math.ceil(durationMinutes * 2)
+              },
+              metadata: pipelineResult.metadata,
+              transcriptionData: {
+                text: rawTranscriptionText,
+                segments: [{ 
+                  id: 'full_transcription',
+                  start: 0,
+                  end: durationMinutes * 60,
+                  text: rawTranscriptionText
+                }],
+                captionSegments: sceneSegments,
+                srtContent: srtResult,
+                totalCharacters: rawTranscriptionText.length,
+                totalWords: rawTranscriptionText.split(/\s+/).filter(word => word.length > 0).length
+              }
+            }
+          };
+
+          job.complete(finalResult, jsxFilePath);
+          
+          // Clean up video file
+          await fs.unlink(file.path).catch(() => {});
+          
+        } catch (error) {
+          console.error(`Pipeline job ${jobId} failed:`, error);
+          job.fail({
+            stage: 'pipeline_execution',
+            message: error.message,
+            stack: error.stack
+          });
+          
+          // Clean up video file on failure
+          await fs.unlink(file.path).catch(() => {});
+        }
+      });
+
+      return { jobId, filename: file.originalname };
+    });
+
+    // Wait for all jobs to be created
+    await Promise.all(jobPromises);
+
+    const processingTime = Date.now() - startTime;
+    
+    console.log(`✅ Batch created: ${batchId} with ${batchJobs.length} jobs`);
+
+    res.json({
+      success: true,
+      batchId,
+      jobs: batchJobs,
+      totalJobs: batchJobs.length,
+      estimatedDuration: `${Math.ceil(batchJobs.length * 2)} minutes`,
+      message: `Batch processing started for ${batchJobs.length} video files`,
+      processingTime
+    });
+
+  } catch (error) {
+    console.error('Batch pipeline error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      batchId
+    });
+  }
+});
+
+/**
+ * GET /api/pipeline/batch-status/:batchId - Get status of all jobs in a batch
+ */
+router.get('/batch-status/:batchId', async (req, res) => {
+  const { batchId } = req.params;
+  
+  try {
+    // For this implementation, we'll get all jobs that match a pattern
+    // In a real implementation, you'd store batch-job relationships in a database
+    const allJobs = Array.from(pipelineJobs.values());
+    const batchJobs = allJobs.filter(job => 
+      job.input.options?.projectName?.includes(batchId.substring(0, 8))
+    );
+
+    if (batchJobs.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Batch not found',
+        batchId
+      });
+    }
+
+    const jobs = batchJobs.map(job => ({
+      jobId: job.jobId,
+      filename: job.input.options?.projectName || 'Unknown',
+      status: job.status,
+      progress: job.progress,
+      progressMessage: job.progressMessage,
+      error: job.error,
+      downloadUrl: job.jsxFilePath ? `/api/pipeline/download/${job.jobId}` : null
+    }));
+
+    const totalJobs = jobs.length;
+    const completedJobs = jobs.filter(job => job.status === 'completed').length;
+    const failedJobs = jobs.filter(job => job.status === 'failed').length;
+    const processingJobs = jobs.filter(job => job.status === 'processing').length;
+    
+    const overallProgress = totalJobs > 0 
+      ? Math.round(jobs.reduce((sum, job) => sum + job.progress, 0) / totalJobs)
+      : 0;
+
+    res.json({
+      success: true,
+      batchId,
+      status: completedJobs === totalJobs ? 'completed' : 
+              failedJobs === totalJobs ? 'failed' :
+              processingJobs > 0 ? 'processing' : 'pending',
+      progress: overallProgress,
+      totalJobs,
+      completedJobs,
+      failedJobs,
+      processingJobs,
+      jobs
+    });
+
+  } catch (error) {
+    console.error('Batch status error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      batchId
+    });
+  }
+});
+
+/**
  * GET /api/pipeline/export/:jobId/txt - Download plain text transcription
  */
 router.get('/export/:jobId/txt', async (req, res) => {
@@ -770,5 +1151,36 @@ function formatVTTTime(seconds) {
   
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toFixed(3).padStart(6, '0')}`;
 }
+
+/**
+ * DEBUG ENDPOINT - Get all pipeline jobs in database (temporary)
+ */
+router.get('/debug/jobs', async (req, res) => {
+  try {
+    const { data: allJobs, error } = await supabase
+      .from('pipeline_jobs_extended')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (error) {
+      return res.json({
+        success: false,
+        error: error.message
+      });
+    }
+
+    res.json({
+      success: true,
+      totalJobs: allJobs?.length || 0,
+      jobs: allJobs || []
+    });
+  } catch (error) {
+    res.json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 module.exports = router;
