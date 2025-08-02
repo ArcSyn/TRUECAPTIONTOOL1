@@ -18,15 +18,19 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:4000',
-        changeOrigin: true,
+        changeOrigin: false,  // Keep original host header for localhost detection
         secure: false,
         timeout: 10000,
+        headers: {
+          'Host': 'localhost:4000'  // Explicitly set host header
+        },
         configure: (proxy, options) => {
           proxy.on('error', (err, req, res) => {
             console.log('Proxy error:', err);
           });
           proxy.on('proxyReq', (proxyReq, req, res) => {
             console.log('Sending Request to the Target:', req.method, req.url);
+            console.log('Host header:', proxyReq.getHeader('host'));
           });
           proxy.on('proxyRes', (proxyRes, req, res) => {
             console.log('Received Response from the Target:', proxyRes.statusCode, req.url);

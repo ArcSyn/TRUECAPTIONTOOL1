@@ -370,8 +370,8 @@ function App() {
               Transform your videos with magical AI transcription and enchanted exports
             </p>
             
-            {/* Navigation to Batch Demo */}
-            <div className="mt-4">
+            {/* Navigation to Advanced Export */}
+            <div className="mt-4 flex gap-3 justify-center">
               <Link 
                 to="/demo"
                 className="inline-flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 
@@ -379,7 +379,16 @@ function App() {
                          transform hover:scale-105 transition-all duration-300"
               >
                 <span>🔀</span>
-                <span>Try Batch Processing Demo</span>
+                <span>Try Batch Demo</span>
+              </Link>
+              <Link 
+                to="/export"
+                className="inline-flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 
+                         text-white font-semibold rounded-lg shadow-lg hover:shadow-purple-500/25 
+                         transform hover:scale-105 transition-all duration-300"
+              >
+                <span>📦</span>
+                <span>Advanced Export</span>
               </Link>
             </div>
             

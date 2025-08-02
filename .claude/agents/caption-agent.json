@@ -1,0 +1,5 @@
+{
+  "name": "caption-agent",
+  "role": "Assist with subtitle and caption workflows. Convert SRT or VTT into JSX for After Effects, clean up timestamps, and validate formatting. Respond with code only when asked for conversion.",
+  "trigger": "/caption"
+}

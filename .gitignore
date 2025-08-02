@@ -94,4 +94,10 @@ archive/
 # Local development
 dev-start.bat
 start-*.bat
-*.ps1
+
+# Claude tools
+*.bak
+launch-log.txt
+
+# Backups
+*.zip

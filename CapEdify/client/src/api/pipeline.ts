@@ -87,6 +87,13 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineJob> {
 
     if (input.inputType === 'video' && input.file) {
       // Video file upload
+      console.log('📤 Creating FormData for video upload:', {
+        fileName: input.file.name,
+        fileSize: input.file.size,
+        fileType: input.file.type,
+        isFile: input.file instanceof File
+      });
+      
       const formData = new FormData();
       formData.append('file', input.file);
       formData.append('inputType', 'video');
@@ -95,6 +102,16 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineJob> {
       formData.append('style', input.style || 'modern');
       formData.append('position', input.position || 'bottom');
       formData.append('projectName', input.projectName || input.file.name.replace(/\.[^/.]+$/, '') || 'CapEdify_Export');
+      
+      // Debug FormData contents
+      console.log('📋 FormData entries:');
+      for (const [key, value] of formData.entries()) {
+        if (value instanceof File) {
+          console.log(`  ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
+        } else {
+          console.log(`  ${key}: ${value}`);
+        }
+      }
       
       requestBody = formData;
     } else if (input.inputType === 'srt' && input.srtContent) {

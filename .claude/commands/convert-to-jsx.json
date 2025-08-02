@@ -1,0 +1,4 @@
+{
+  "name": "convert-to-jsx",
+  "prompt": "Convert @file from SRT into After Effects JSX format. Output code only. Assume 0.001s precision and include text layer creation."
+}

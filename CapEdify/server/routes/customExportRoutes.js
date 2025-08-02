@@ -1,62 +1,92 @@
-/**
- * Custom Export Routes - Advanced export management API
- * 
- * @description REST API endpoints for CapEdify's advanced export system.
- * Handles custom export bundle generation, preset management, and file downloads.
- * 
- * Key Endpoints:
- * • POST /api/export/custom - Create custom export bundle
- * • GET /api/export/status/:exportId - Check export status
- * • GET /api/export/download/:exportId - Download export bundle
- * • GET /api/export/presets - List user's export presets
- * • POST /api/export/presets - Save new export preset
- * • GET /api/export/themes - List available themes
- * • GET /api/export/jobs - List user's completed jobs
- */
-
 const express = require('express');
-const path = require('path');
-const fs = require('fs').promises;
-const { createClient } = require('@supabase/supabase-js');
-
-const customExportService = require('../services/customExportService');
-const { getUserId, setupRLSContext } = require('../middleware/userAuth');
-
 const router = express.Router();
 
-// Initialize Supabase client
+// Debug endpoint to test routing
+router.get('/test', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Advanced Export System routes working',
+    timestamp: new Date().toISOString()
+  });
+});
+const fs = require('fs').promises;
+const path = require('path');
+const archiver = require('archiver');
+const { v4: uuidv4 } = require('uuid');
+const { getUserId } = require('../middleware/userAuth');
+
+// Import existing agents - reuse the proven logic
+const AEJSXExporterAgent = require('../services/aeJSXExporterAgent');
+
+// Import Supabase client
+const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE
 );
 
+// Ensure exports directory exists
+const EXPORTS_DIR = path.join(__dirname, '../exports');
+const ensureExportsDir = async () => {
+  try {
+    await fs.access(EXPORTS_DIR);
+  } catch {
+    await fs.mkdir(EXPORTS_DIR, { recursive: true });
+  }
+};
+
 /**
- * POST /api/export/custom - Create custom export bundle
+ * POST /api/export/custom
+ * 
+ * Advanced Export System - creates multi-format ZIP exports
+ * 
+ * Body:
+ * {
+ *   "jobs": ["jobA", "jobB"],
+ *   "formats": ["jsx", "srt", "txrt"],
+ *   "jsxStyle": "bold",
+ *   "zipMode": "grouped",
+ *   "compress": true,
+ *   "expiresInHours": 24,
+ *   "renameMap": {
+ *     "jobA": "clip_1",
+ *     "jobB": "clip_2"
+ *   }
+ * }
  */
 router.post('/custom', getUserId, async (req, res) => {
+  console.log('📦 Advanced Export System - Custom export request received');
+  console.log('🔐 User ID:', req.userId);
+  console.log('📋 Request body:', JSON.stringify(req.body, null, 2));
+  
   try {
-    const {
-      jobs,
-      formats = ['jsx'],
-      theme = 'minimal_clean',
-      jsxStyle = 'modern',
-      zipMode = 'grouped',
-      compress = false,
+    const { 
+      jobs, 
+      formats, 
+      jsxStyle = 'bold', 
+      zipMode = 'grouped', 
+      compress = false, 
       expiresInHours = 24,
-      renameMap = {},
-      presetId = null
+      renameMap = {}
     } = req.body;
 
     // Validation
     if (!jobs || !Array.isArray(jobs) || jobs.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Jobs array is required and must not be empty'
+        error: 'Invalid jobs array provided'
       });
     }
 
-    const validFormats = ['jsx', 'srt', 'vtt', 'json', 'txt'];
-    const invalidFormats = formats.filter(f => !validFormats.includes(f));
+    if (!formats || !Array.isArray(formats) || formats.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one export format must be specified'
+      });
+    }
+
+    const validFormats = ['jsx', 'srt', 'txrt', 'ytvv'];
+    const invalidFormats = formats ? formats.filter(f => !validFormats.includes(f)) : [];
     if (invalidFormats.length > 0) {
       return res.status(400).json({
         success: false,
@@ -64,101 +94,203 @@ router.post('/custom', getUserId, async (req, res) => {
       });
     }
 
-    const validJsxStyles = ['bold', 'modern', 'plain'];
-    if (!validJsxStyles.includes(jsxStyle)) {
-      return res.status(400).json({
-        success: false,
-        error: `Invalid jsxStyle. Must be one of: ${validJsxStyles.join(', ')}`
-      });
-    }
+    console.log(`📋 Processing ${jobs.length} jobs with formats: ${formats.join(', ')}`);
+    console.log(`🎨 JSX Style: ${jsxStyle}, ZIP Mode: ${zipMode}, Compress: ${compress}`);
 
-    const validZipModes = ['individual', 'grouped', 'combined'];
-    if (!validZipModes.includes(zipMode)) {
-      return res.status(400).json({
-        success: false,
-        error: `Invalid zipMode. Must be one of: ${validZipModes.join(', ')}`
-      });
-    }
+    await ensureExportsDir();
 
-    console.log('🎨 Custom export request:', {
-      userId: req.userId.substring(0, 12) + '...',
-      jobs: jobs.length,
-      formats: formats.join(', '),
-      theme,
-      zipMode
-    });
+    // Generate unique export ID
+    const exportId = uuidv4();
+    const exportDir = path.join(EXPORTS_DIR, exportId);
+    await fs.mkdir(exportDir, { recursive: true });
 
-    // Create export bundle
-    const result = await customExportService.createCustomExport({
-      jobs,
+    const exportData = {
+      export_id: exportId,
+      user_id: req.userId,
+      job_ids: jobs,
       formats,
-      theme,
-      jsxStyle,
-      zipMode,
+      jsx_style: jsxStyle,
+      zip_mode: zipMode,
       compress,
-      expiresInHours,
-      renameMap,
-      presetId
-    }, req.userId);
+      status: 'processing',
+      created_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + (expiresInHours * 60 * 60 * 1000)).toISOString()
+    };
 
-    res.json({
-      success: true,
-      ...result
-    });
+    // Store export record in database (optional - skip if table doesn't exist)
+    try {
+      const { error: dbError } = await supabase
+        .from('exports')
+        .insert(exportData);
 
-  } catch (error) {
-    console.error('❌ Custom export creation failed:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
- * GET /api/export/status/:exportId - Check export status
- */
-router.get('/status/:exportId', getUserId, async (req, res) => {
-  try {
-    const { exportId } = req.params;
-    
-    const status = await customExportService.getExportStatus(exportId, req.userId);
-    
-    res.json({
-      success: true,
-      ...status
-    });
-
-  } catch (error) {
-    console.error(`❌ Export status check failed for ${req.params.exportId}:`, error);
-    
-    if (error.message === 'Export not found') {
-      return res.status(404).json({
-        success: false,
-        error: 'Export not found'
-      });
+      if (dbError) {
+        console.warn('⚠️  Database warning (exports table may not exist):', dbError.message);
+        // Continue without database logging for now
+      }
+    } catch (dbErr) {
+      console.warn('⚠️  Database table missing, continuing without export logging');
     }
 
+    // Process each job and generate files
+    const processedJobs = [];
+    const errors = [];
+
+    for (const jobId of jobs) {
+      try {
+        console.log(`🔄 Processing job: ${jobId}`);
+        
+        // Get transcription data from pipeline job results (reuse existing logic)
+        const { data: job, error: jobError } = await supabase
+          .from('jobs')
+          .select('result')
+          .eq('id', jobId)
+          .eq('status', 'completed')
+          .single();
+        
+        if (jobError || !job || !job.result?.data?.transcriptionData) {
+          errors.push(`Job ${jobId}: No transcription data found or job not completed`);
+          continue;
+        }
+        
+        const transcriptionData = job.result.data.transcriptionData;
+
+        const jobName = renameMap[jobId] || `job_${jobId}`;
+        const jobDir = zipMode === 'grouped' ? path.join(exportDir, jobName) : exportDir;
+        
+        if (zipMode === 'grouped') {
+          await fs.mkdir(jobDir, { recursive: true });
+        }
+
+        const jobFiles = [];
+
+        // Generate each requested format
+        for (const format of formats) {
+          try {
+            let filename, content;
+
+            switch (format) {
+              case 'jsx':
+                console.log(`🎬 Generating JSX (${jsxStyle}) for ${jobId}`);
+                // Use segments from transcriptionData (captionSegments or segments)
+                const segments = transcriptionData.captionSegments || transcriptionData.segments;
+                content = AEJSXExporterAgent.generateJSX(segments, {
+                  style: jsxStyle,
+                  position: 'bottom',
+                  projectName: jobName
+                });
+                filename = `${jobName}.jsx`;
+                break;
+
+              case 'srt':
+                console.log(`📄 Generating SRT for ${jobId}`);
+                content = await generateSRT(transcriptionData);
+                filename = `${jobName}.srt`;
+                break;
+
+              case 'txrt':
+                console.log(`📝 Generating TXRT for ${jobId}`);
+                content = await generateTXRT(transcriptionData);
+                filename = `${jobName}.txrt`;
+                break;
+
+              case 'ytvv':
+                console.log(`📺 Generating YTVV for ${jobId}`);
+                content = await generateYTVV(transcriptionData);
+                filename = `${jobName}.ytvv`;
+                break;
+
+              default:
+                throw new Error(`Unsupported format: ${format}`);
+            }
+
+            // Write file to export directory
+            const filePath = path.join(jobDir, filename);
+            await fs.writeFile(filePath, content, 'utf8');
+            jobFiles.push(filename);
+            
+            console.log(`✅ Generated ${filename} (${content.length} chars)`);
+          } catch (formatError) {
+            console.error(`❌ Error generating ${format} for ${jobId}:`, formatError);
+            errors.push(`Job ${jobId}, format ${format}: ${formatError.message}`);
+          }
+        }
+
+        processedJobs.push({
+          jobId,
+          jobName,
+          files: jobFiles
+        });
+
+      } catch (jobError) {
+        console.error(`❌ Error processing job ${jobId}:`, jobError);
+        errors.push(`Job ${jobId}: ${jobError.message}`);
+      }
+    }
+
+    // Create ZIP file
+    const zipFilename = `export_${exportId}.zip`;
+    const zipPath = path.join(EXPORTS_DIR, zipFilename);
+    
+    console.log(`📦 Creating ZIP archive: ${zipFilename}`);
+    await createZipArchive(exportDir, zipPath, compress);
+
+    // Clean up temporary directory
+    await fs.rm(exportDir, { recursive: true, force: true });
+
+    // Generate download URL
+    const downloadUrl = `${req.protocol}://${req.get('host')}/api/export/download/${exportId}`;
+
+    // Update export record with completion (optional)
+    try {
+      await supabase
+        .from('exports')
+        .update({
+          status: 'completed',
+          download_url: downloadUrl,
+          processed_jobs: processedJobs.length,
+          errors: errors.length > 0 ? errors : null,
+          completed_at: new Date().toISOString()
+        })
+        .eq('export_id', exportId);
+    } catch (updateErr) {
+      console.warn('⚠️  Could not update export record (table may not exist)');
+    }
+
+    console.log(`🎉 Export completed: ${processedJobs.length} jobs processed, ${errors.length} errors`);
+
+    res.json({
+      success: true,
+      exportId,
+      downloadUrl,
+      processedJobs: processedJobs.length,
+      totalJobs: jobs.length,
+      errors: errors.length > 0 ? errors : undefined,
+      expiresAt: exportData.expiresAt
+    });
+
+  } catch (error) {
+    console.error('❌ Advanced Export System error:', error);
+    console.error('❌ Error stack:', error.stack);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: error.message || 'Internal server error during export processing'
     });
   }
 });
 
 /**
- * GET /api/export/download/:exportId - Download export bundle
+ * GET /api/export/download/:exportId
+ * Download completed export ZIP
  */
-router.get('/download/:exportId', getUserId, async (req, res) => {
+router.get('/download/:exportId', async (req, res) => {
   try {
     const { exportId } = req.params;
     
-    // Get export record
+    // Get export record from database
     const { data: exportRecord, error } = await supabase
-      .from('custom_exports')
+      .from('exports')
       .select('*')
-      .eq('id', exportId)
-      .eq('user_id', req.userId)
+      .eq('export_id', exportId)
       .single();
 
     if (error || !exportRecord) {
@@ -169,306 +301,166 @@ router.get('/download/:exportId', getUserId, async (req, res) => {
     }
 
     // Check if expired
-    if (new Date(exportRecord.expires_at) < new Date()) {
+    if (new Date() > new Date(exportRecord.expires_at)) {
       return res.status(410).json({
         success: false,
         error: 'Export has expired'
       });
     }
 
-    // Check if completed
-    if (exportRecord.status !== 'completed') {
-      return res.status(400).json({
-        success: false,
-        error: `Export is not ready. Status: ${exportRecord.status}`,
-        status: exportRecord.status
-      });
-    }
-
-    // Send file
-    const filePath = path.join(customExportService.exportDir, `export_${exportId}.zip`);
+    const zipPath = path.join(EXPORTS_DIR, `export_${exportId}.zip`);
     
     try {
-      await fs.access(filePath);
-    } catch (error) {
+      await fs.access(zipPath);
+    } catch {
       return res.status(404).json({
         success: false,
         error: 'Export file not found'
       });
     }
 
-    // Set download headers
-    res.setHeader('Content-Disposition', `attachment; filename=\"${exportRecord.zip_filename}\"`);
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Length', exportRecord.zip_size_bytes || 0);
-    res.setHeader('X-Export-ID', exportId);
-    res.setHeader('X-Expires-At', exportRecord.expires_at);
-
-    // Stream file
-    res.sendFile(path.resolve(filePath));
+    console.log(`📥 Serving export download: ${exportId}`);
     
-    console.log(`📥 Export downloaded: ${exportId} by ${req.userId.substring(0, 12)}...`);
-
-  } catch (error) {
-    console.error(`❌ Export download failed for ${req.params.exportId}:`, error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
- * GET /api/export/presets - List user's export presets
- */
-router.get('/presets', getUserId, async (req, res) => {
-  try {
-    const { data: presets, error } = await supabase
-      .from('export_presets')
-      .select('*')
-      .eq('user_id', req.userId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw new Error(`Failed to fetch presets: ${error.message}`);
-    }
-
-    res.json({
-      success: true,
-      presets: presets || []
-    });
-
-  } catch (error) {
-    console.error('❌ Preset fetch failed:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
- * POST /api/export/presets - Save new export preset
- */
-router.post('/presets', getUserId, async (req, res) => {
-  try {
-    const { name, description, config } = req.body;
-
-    if (!name || !config) {
-      return res.status(400).json({
-        success: false,
-        error: 'Name and config are required'
-      });
-    }
-
-    const { data: preset, error } = await supabase
-      .from('export_presets')
-      .insert({
-        user_id: req.userId,
-        name,
-        description: description || '',
-        config_json: config
-      })
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === '23505') { // Unique constraint violation
-        return res.status(409).json({
-          success: false,
-          error: 'Preset name already exists'
-        });
-      }
-      throw new Error(`Failed to save preset: ${error.message}`);
-    }
-
-    res.json({
-      success: true,
-      preset
-    });
-
-  } catch (error) {
-    console.error('❌ Preset save failed:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
- * DELETE /api/export/presets/:presetId - Delete export preset
- */
-router.delete('/presets/:presetId', getUserId, async (req, res) => {
-  try {
-    const { presetId } = req.params;
-
-    const { error } = await supabase
-      .from('export_presets')
-      .delete()
-      .eq('id', presetId)
-      .eq('user_id', req.userId);
-
-    if (error) {
-      throw new Error(`Failed to delete preset: ${error.message}`);
-    }
-
-    res.json({
-      success: true,
-      message: 'Preset deleted successfully'
-    });
-
-  } catch (error) {
-    console.error('❌ Preset deletion failed:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
- * GET /api/export/themes - List available themes
- */
-router.get('/themes', async (req, res) => {
-  try {
-    const { data: themes, error } = await supabase
-      .from('export_themes')
-      .select('id, name, display_name, description, theme_config, category, preview_image_url')
-      .eq('is_public', true)
-      .order('category', { ascending: true })
-      .order('name', { ascending: true });
-
-    if (error) {
-      throw new Error(`Failed to fetch themes: ${error.message}`);
-    }
-
-    // Group themes by category
-    const themesByCategory = (themes || []).reduce((groups, theme) => {
-      if (!groups[theme.category]) {
-        groups[theme.category] = [];
-      }
-      groups[theme.category].push(theme);
-      return groups;
-    }, {});
-
-    res.json({
-      success: true,
-      themes: themesByCategory
-    });
-
-  } catch (error) {
-    console.error('❌ Themes fetch failed:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-/**
- * GET /api/export/jobs - List user's completed pipeline jobs
- */
-router.get('/jobs', getUserId, async (req, res) => {
-  try {
-    const { limit = 50, offset = 0 } = req.query;
-
-    const { data: jobs, error } = await supabase
-      .from('pipeline_jobs_extended')
-      .select('job_id, input_filename, input_type, duration_minutes, processing_config, files_generated, created_at, completed_at')
-      .eq('user_id', req.userId)
-      .eq('status', 'completed')
-      .order('completed_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (error) {
-      throw new Error(`Failed to fetch jobs: ${error.message}`);
-    }
-
-    // Format job data for frontend
-    const formattedJobs = (jobs || []).map(job => ({
-      jobId: job.job_id,
-      filename: job.input_filename,
-      inputType: job.input_type,
-      duration: job.duration_minutes,
-      style: job.processing_config?.style || 'modern',
-      position: job.processing_config?.position || 'bottom',
-      availableFormats: Object.keys(job.files_generated || {}),
-      createdAt: job.created_at,
-      completedAt: job.completed_at
-    }));
-
-    res.json({
-      success: true,
-      jobs: formattedJobs,
-      pagination: {
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        total: formattedJobs.length
+    res.download(zipPath, `capedify_export_${exportId}.zip`, (err) => {
+      if (err) {
+        console.error('❌ Download error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({
+            success: false,
+            error: 'Download failed'
+          });
+        }
       }
     });
 
   } catch (error) {
-    console.error('❌ Jobs fetch failed:', error);
+    console.error('❌ Download endpoint error:', error);
     res.status(500).json({
       success: false,
-      error: error.message
+      error: 'Internal server error'
     });
   }
 });
 
+// Helper Functions
+
 /**
- * POST /api/export/cleanup - Manual cleanup of expired exports (admin only)
+ * Generate SRT format subtitle file
  */
-router.post('/cleanup', async (req, res) => {
-  try {
-    const cleanedCount = await customExportService.cleanupExpiredExports();
+async function generateSRT(transcriptionData) {
+  // Use the existing srtContent if available, or generate from segments
+  if (transcriptionData.srtContent) {
+    return transcriptionData.srtContent;
+  }
+  
+  const segments = transcriptionData.captionSegments || transcriptionData.segments;
+  if (!segments || segments.length === 0) {
+    throw new Error('No segments available for SRT generation');
+  }
+
+  let srtContent = '';
+  segments.forEach((segment, index) => {
+    const startTime = formatSRTTime(segment.start);
+    const endTime = formatSRTTime(segment.end);
     
-    res.json({
-      success: true,
-      message: `Cleaned up ${cleanedCount} expired exports`
-    });
+    srtContent += `${index + 1}\n`;
+    srtContent += `${startTime} --> ${endTime}\n`;
+    srtContent += `${segment.text.trim()}\n\n`;
+  });
 
-  } catch (error) {
-    console.error('❌ Manual cleanup failed:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
+  return srtContent;
+}
 
 /**
- * DEBUG ENDPOINT - Check pipeline jobs in database
+ * Generate TXRT format (CapEdify's enhanced transcript format)
  */
-router.get('/debug/pipeline-jobs', async (req, res) => {
-  try {
-    const { data: allJobs, error } = await supabase
-      .from('pipeline_jobs_extended')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(10);
+async function generateTXRT(transcriptionData) {
+  const segments = transcriptionData.captionSegments || transcriptionData.segments;
+  const txrt = {
+    version: '1.0',
+    source: 'CapEdify Advanced Export',
+    generatedAt: new Date().toISOString(),
+    totalDuration: transcriptionData.duration || 0,
+    wordCount: transcriptionData.totalWords || 0,
+    characterCount: transcriptionData.totalCharacters || 0,
+    segments: segments || [],
+    fullText: transcriptionData.text || segments?.map(s => s.text).join(' ') || ''
+  };
 
-    if (error) {
-      return res.json({
-        success: false,
-        error: error.message,
-        code: error.code
-      });
-    }
+  return JSON.stringify(txrt, null, 2);
+}
 
-    res.json({
-      success: true,
-      totalJobs: allJobs?.length || 0,
-      jobs: allJobs || [],
-      tableName: 'pipeline_jobs_extended'
-    });
-  } catch (error) {
-    res.json({
-      success: false,
-      error: error.message
-    });
+/**
+ * Generate YTVV format (YouTube VTT-compatible)
+ */
+async function generateYTVV(transcriptionData) {
+  const segments = transcriptionData.captionSegments || transcriptionData.segments;
+  if (!segments || segments.length === 0) {
+    throw new Error('No segments available for YTVV generation');
   }
-});
+
+  let vttContent = 'WEBVTT\n\n';
+  
+  segments.forEach((segment, index) => {
+    const startTime = formatVTTTime(segment.start);
+    const endTime = formatVTTTime(segment.end);
+    
+    vttContent += `${index + 1}\n`;
+    vttContent += `${startTime} --> ${endTime}\n`;
+    vttContent += `${segment.text.trim()}\n\n`;
+  });
+
+  return vttContent;
+}
+
+/**
+ * Format time for SRT files (HH:MM:SS,mmm)
+ */
+function formatSRTTime(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  const milliseconds = Math.floor((seconds % 1) * 1000);
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${milliseconds.toString().padStart(3, '0')}`;
+}
+
+/**
+ * Format time for VTT files (HH:MM:SS.mmm)
+ */
+function formatVTTTime(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  const milliseconds = Math.floor((seconds % 1) * 1000);
+  
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
+}
+
+/**
+ * Create ZIP archive with optional compression
+ */
+async function createZipArchive(sourceDir, outputPath, compress = false) {
+  return new Promise((resolve, reject) => {
+    const output = require('fs').createWriteStream(outputPath);
+    const archive = archiver('zip', {
+      zlib: { level: compress ? 9 : 1 } // 9 = best compression, 1 = fastest
+    });
+
+    output.on('close', () => {
+      console.log(`📦 ZIP created: ${archive.pointer()} total bytes`);
+      resolve();
+    });
+
+    archive.on('error', (err) => {
+      console.error('❌ ZIP creation error:', err);
+      reject(err);
+    });
+
+    archive.pipe(output);
+    archive.directory(sourceDir, false);
+    archive.finalize();
+  });
+}
 
 module.exports = router;

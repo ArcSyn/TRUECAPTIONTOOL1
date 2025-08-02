@@ -6,7 +6,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "devtools": "npx react-devtools",
-    "dev:debug": "concurrently \"npm run dev\" \"npm run devtools\""
+    "dev:debug": "concurrently -n \"vite,devtools\" -c \"cyan,magenta\" \"powershell -Command \\\"npm run dev\\\"\" \"powershell -Command \\\"npm run devtools\\\"\""
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",

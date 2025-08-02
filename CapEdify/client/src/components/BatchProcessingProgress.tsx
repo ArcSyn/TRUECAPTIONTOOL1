@@ -6,7 +6,7 @@ import { Card } from './ui/card';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/lib/utils';
 import { VideoFile } from '@/types';
-import { runPipeline, pollPipelineProgress, PipelineStatus } from '@/api/pipeline';
+import { runPipeline, getPipelineStatus, PipelineStatus } from '@/api/pipeline';
 
 interface BatchJob {
   id: string;
@@ -135,6 +135,113 @@ export function BatchProcessingProgress({
       
       // Retry polling after delay
       setTimeout(() => pollBatchStatus(batchId), 5000);
+    }
+  };
+
+  // Process individual job using pipeline API
+  const processJob = async (jobIndex: number) => {
+    const job = batchJobs[jobIndex];
+    if (!job || job.status !== 'pending') return;
+
+    try {
+      // Update job status to processing
+      setBatchJobs(prev => prev.map((j, i) => 
+        i === jobIndex 
+          ? { ...j, status: 'processing', progressMessage: 'Starting...' }
+          : j
+      ));
+
+      // Start pipeline processing - use the actual File object from VideoFile
+      const actualFile = job.videoFile.file;
+      console.log('🎬 Processing video file:', {
+        name: actualFile.name,
+        size: actualFile.size,
+        type: actualFile.type,
+        isFile: actualFile instanceof File,
+        lastModified: actualFile.lastModified
+      });
+      
+      const pipelineInput = {
+        inputType: 'video' as const,
+        file: actualFile,
+        userTier: options.userTier || 'free',
+        style: options.style || 'modern',
+        position: options.position || 'bottom',
+        projectName: actualFile.name.replace(/\.[^/.]+$/, '') || 'CapEdify_Export'
+      };
+      
+      console.log('📋 Pipeline input prepared:', {
+        inputType: pipelineInput.inputType,
+        hasFile: !!pipelineInput.file,
+        fileName: pipelineInput.file?.name,
+        projectName: pipelineInput.projectName
+      });
+      
+      const response = await runPipeline(pipelineInput);
+      
+      if (response.success && response.jobId) {
+        // Update with job ID and start polling
+        setBatchJobs(prev => prev.map((j, i) => 
+          i === jobIndex 
+            ? { ...j, jobId: response.jobId, progressMessage: 'Processing video...' }
+            : j
+        ));
+
+        // Poll for progress
+        const pollProgress = async () => {
+          if (!response.jobId) return;
+          
+          try {
+            const status = await getPipelineStatus(response.jobId);
+            
+            setBatchJobs(prev => prev.map((j, i) => {
+              if (i !== jobIndex) return j;
+              
+              return {
+                ...j,
+                progress: status.progress || 0,
+                progressMessage: status.status === 'completed' ? 'Completed!' :
+                                status.status === 'failed' ? 'Failed' :
+                                status.message || 'Processing...',
+                status: status.status as BatchJob['status'],
+                error: status.error,
+                downloadUrl: status.downloadUrl,
+                completedAt: status.status === 'completed' ? new Date().toISOString() : undefined
+              };
+            }));
+
+            // Continue polling if still processing
+            if (status.status === 'processing') {
+              setTimeout(pollProgress, 2000);
+            } else if (status.status === 'completed') {
+              setCompletedCount(prev => prev + 1);
+            } else if (status.status === 'failed') {
+              setFailedCount(prev => prev + 1);
+            }
+          } catch (error) {
+            console.error('Error polling job progress:', error);
+            setBatchJobs(prev => prev.map((j, i) => 
+              i === jobIndex 
+                ? { ...j, status: 'failed', error: 'Failed to get progress' }
+                : j
+            ));
+            setFailedCount(prev => prev + 1);
+          }
+        };
+
+        // Start polling immediately
+        pollProgress();
+      } else {
+        throw new Error(response.error || 'Failed to start pipeline');
+      }
+    } catch (error: any) {
+      console.error('Error processing job:', error);
+      setBatchJobs(prev => prev.map((j, i) => 
+        i === jobIndex 
+          ? { ...j, status: 'failed', error: error.message }
+          : j
+      ));
+      setFailedCount(prev => prev + 1);
     }
   };
 

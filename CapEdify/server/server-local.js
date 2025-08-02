@@ -467,6 +467,10 @@ initLocalDB();
 const pipelineRoutes = require('./routes/pipelineRoutes');
 app.use('/api/pipeline', pipelineRoutes);
 
+// Import and use custom export routes (Advanced Export System)
+const customExportRoutes = require('./routes/customExportRoutes');
+app.use('/api/export', customExportRoutes);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({

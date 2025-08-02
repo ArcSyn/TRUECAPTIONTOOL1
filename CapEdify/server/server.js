@@ -82,6 +82,9 @@ app.use('/api/videos', videoRoutes);
 // Transcription Routes
 app.use('/api/transcribe', transcribeRoutes);
 
+// Custom Export Routes (Advanced Export System) - must come first
+app.use('/api/export', customExportRoutes);
+
 // Export Routes
 app.use('/api/export', exportRoutes);
 
@@ -90,9 +93,6 @@ app.use('/api/pipeline', pipelineRoutes);
 
 // Batch Processing Routes
 app.use('/api/batch', batchRoutes);
-
-// Custom Export Routes
-app.use('/api/export', customExportRoutes);
 
 // JSON parse error handler
 app.use((err, req, res, next) => {
